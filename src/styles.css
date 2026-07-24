@@ -734,3 +734,373 @@ h2 {
     break-inside: avoid;
   }
 }
+
+.projects-screen {
+  display: grid;
+  gap: 1.5rem;
+  margin: 0 auto;
+  max-width: 980px;
+  min-height: 100svh;
+  padding: 1.5rem;
+}
+
+.projects-screen .workspace-grid {
+  display: block;
+}
+
+.projects-screen .project-sidebar {
+  min-height: 0;
+}
+
+.projects-screen .section-heading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.projects-screen .project-list li {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.roadmap-screen {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100svh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.roadmap-bar {
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(180px, 260px) repeat(6, auto);
+  padding: 0.7rem 0.9rem;
+}
+
+.roadmap-bar button,
+.roadmap-bar input {
+  margin: 0;
+}
+
+.roadmap-title {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.roadmap-title img {
+  height: 34px;
+  width: 34px;
+}
+
+.roadmap-title input {
+  border: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  padding: 0.4rem;
+}
+
+.roadmap-body {
+  display: grid;
+  grid-template-columns: 35% 65%;
+  min-height: 0;
+}
+
+.file-tree {
+  background: #fbfdfb;
+  border-right: 1px solid var(--border);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tree-mini-actions {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.75rem;
+}
+
+.tree-mini-actions button,
+.copy-button,
+.menu-button,
+.tree-toggle,
+.node-menu button {
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+}
+
+.file-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-tree-list.root {
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+.file-tree-item {
+  position: relative;
+}
+
+.file-row {
+  align-items: center;
+  border-radius: 6px;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: 12px 26px minmax(0, 1fr) auto auto;
+  padding: 0.18rem 0.25rem 0.18rem calc(0.25rem + var(--depth, 0) * 1.1rem);
+}
+
+.file-row.selected {
+  background: var(--panel-soft);
+}
+
+.tree-line {
+  border-left: 1px solid var(--border);
+  height: 100%;
+  min-height: 28px;
+}
+
+.tree-toggle {
+  align-items: center;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  width: 24px;
+}
+
+.tree-toggle:hover {
+  background: #edf5ef;
+}
+
+.file-name {
+  align-items: center;
+  background: transparent;
+  color: var(--text);
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: 10px auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 0.45rem 0.35rem;
+  text-align: left;
+}
+
+.file-name:hover {
+  background: transparent;
+}
+
+.file-name strong,
+.file-name span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-dot {
+  border-radius: 50%;
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+}
+
+.state-dot.planned {
+  background: #9ca3af;
+}
+
+.state-dot.pending {
+  background: #d3a72f;
+}
+
+.state-dot.in_progress {
+  background: #2d7dd2;
+}
+
+.state-dot.blocked {
+  background: #a23030;
+}
+
+.state-dot.closed {
+  background: #088c3f;
+}
+
+.copy-button,
+.menu-button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.copy-button:hover,
+.menu-button:hover {
+  background: #edf5ef;
+  color: var(--text);
+}
+
+.node-menu {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0 2rem;
+  max-width: 320px;
+  padding: 0.5rem;
+  position: absolute;
+  z-index: 5;
+}
+
+.node-menu button,
+.node-menu label {
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.node-menu button:hover {
+  background: var(--panel-soft);
+}
+
+.node-menu select {
+  margin-top: 0.25rem;
+  padding: 0.45rem;
+}
+
+.text-editor {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.editor-fields {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(220px, 1.4fr) minmax(150px, 0.6fr);
+  margin-bottom: 0.75rem;
+}
+
+.editor-fields label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.editor-fields input,
+.editor-fields select {
+  margin-top: 0.25rem;
+}
+
+.content-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.55;
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  resize: none;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(10, 20, 14, 0.36);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 20;
+}
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 1rem;
+  max-width: 680px;
+  padding: 1rem;
+  width: min(100%, 680px);
+}
+
+.modal.compact {
+  max-width: 320px;
+}
+
+.modal textarea {
+  min-height: 280px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.print-surface {
+  display: none;
+}
+
+@media (max-width: 920px) {
+  .roadmap-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .roadmap-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: 42% 58%;
+  }
+
+  .file-tree {
+    border-bottom: 1px solid var(--border);
+    border-right: 0;
+  }
+
+  .editor-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .projects-screen .project-list li {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .roadmap-screen {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .roadmap-body,
+  .text-editor {
+    display: block;
+  }
+
+  .print-surface {
+    color: #111111;
+    display: block;
+    font-family: Georgia, 'Times New Roman', serif;
+    padding: 0;
+  }
+
+  .print-surface h1,
+  .print-surface h2,
+  .print-surface h3,
+  .print-surface h4,
+  .print-surface h5,
+  .print-surface h6 {
+    break-after: avoid;
+  }
+}

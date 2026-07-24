@@ -21,18 +21,10 @@ const initialDocument: RoadmapDocument = {
   },
   nodes: [
     {
-      id: 'vision',
-      title: 'Vision del proyecto',
+      id: '',
+      title: 'Nueva fase',
       status: 'pending',
-      objective: 'Definir la direccion principal del roadmap.',
-      description: '',
-      expectedResult: 'Un objetivo claro para guiar el arbol.',
-      inScope: [],
-      outOfScope: [],
-      dependencies: [],
-      documents: [],
-      commits: [],
-      notes: '',
+      content: '',
       children: [],
     },
   ],
@@ -92,6 +84,7 @@ export function ProjectList({ session }: ProjectListProps) {
   const [syncError, setSyncError] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [projectImportText, setProjectImportText] = useState('')
+  const [showProjectImport, setShowProjectImport] = useState(false)
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -213,7 +206,7 @@ export function ProjectList({ session }: ProjectListProps) {
   function handleOpenProject(project: RoadmapProject) {
     const cachedDocument = localStorage.getItem(localStorageKey(project.id))
     const nextDocument = cachedDocument
-      ? (JSON.parse(cachedDocument) as RoadmapDocument)
+      ? normalizeRoadmapDocument(JSON.parse(cachedDocument))
       : normalizeDocument(project.document, project)
 
     setProjects((currentProjects) =>
@@ -308,8 +301,21 @@ export function ProjectList({ session }: ProjectListProps) {
     }
   }
 
+  if (activeProject) {
+    return (
+      <RoadmapEditor
+        document={normalizeDocument(activeProject.document, activeProject)}
+        onBack={() => setActiveProjectId(null)}
+        onChange={handleDocumentChange}
+        onSignOut={() => supabase.auth.signOut()}
+        syncError={syncError}
+        syncStatus={syncStatus}
+      />
+    )
+  }
+
   return (
-    <main className="workspace-shell">
+    <main className="projects-screen">
       <header className="topbar">
         <div className="brand-row">
           <img src="/arboria-logo.png" alt="" />
@@ -341,21 +347,12 @@ export function ProjectList({ session }: ProjectListProps) {
             >
               {isCreating ? 'Creando...' : 'Nuevo'}
             </button>
-          </div>
-
-          <div className="project-import">
-            <textarea
-              aria-label="Importar JSON como proyecto"
-              onChange={(event) => setProjectImportText(event.target.value)}
-              placeholder="Importar JSON como proyecto"
-              value={projectImportText}
-            />
             <button
-              disabled={!projectImportText.trim() || isCreating}
-              onClick={handleImportTextAsProject}
+              className="secondary-button"
+              onClick={() => setShowProjectImport(true)}
               type="button"
             >
-              Importar JSON
+              Importar proyecto JSON
             </button>
           </div>
 
@@ -382,6 +379,12 @@ export function ProjectList({ session }: ProjectListProps) {
                   <span>{formatDate(project.updated_at)}</span>
                 </button>
                 <button
+                  onClick={() => handleOpenProject(project)}
+                  type="button"
+                >
+                  Abrir
+                </button>
+                <button
                   aria-label={`Eliminar ${project.name}`}
                   className="text-danger"
                   onClick={() => handleDeleteProject(project.id)}
@@ -400,28 +403,36 @@ export function ProjectList({ session }: ProjectListProps) {
             ))}
           </ul>
         </aside>
-
-        <section className="editor-placeholder" aria-live="polite">
-          {activeProject ? (
-            <RoadmapEditor
-              document={normalizeDocument(activeProject.document, activeProject)}
-              onImportAsProject={handleImportProject}
-              onChange={handleDocumentChange}
-              syncError={syncError}
-              syncStatus={syncStatus}
-            />
-          ) : (
-            <>
-              <p className="eyebrow">Editor pendiente</p>
-              <h2>Abre o crea un proyecto</h2>
-              <p>
-                La siguiente fase podra montar aqui el arbol completo sin tocar
-                la base de autenticacion y proyectos.
-              </p>
-            </>
-          )}
-        </section>
       </section>
+
+      {showProjectImport ? (
+        <div className="modal-backdrop">
+          <section className="modal">
+            <h2>Importar proyecto JSON</h2>
+            <textarea
+              aria-label="Importar JSON como proyecto"
+              onChange={(event) => setProjectImportText(event.target.value)}
+              value={projectImportText}
+            />
+            <div className="modal-actions">
+              <button
+                disabled={!projectImportText.trim() || isCreating}
+                onClick={handleImportTextAsProject}
+                type="button"
+              >
+                Importar
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => setShowProjectImport(false)}
+                type="button"
+              >
+                Cancelar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   )
 }
