@@ -25,6 +25,8 @@ type FlatNode = {
   path: RoadmapNode[]
 }
 
+type ImportMode = 'replace-project' | 'append-to-selected' | 'replace-selected'
+
 const statusOptions: Array<{ label: string; value: RoadmapNodeStatus }> = [
   { label: 'Planificada', value: 'planned' },
   { label: 'Pendiente', value: 'pending' },
@@ -277,6 +279,29 @@ function branchIds(node: RoadmapNode): string[] {
   return [node.id, ...node.children.flatMap(branchIds)]
 }
 
+function collectNodeIds(nodes: RoadmapNode[], ignoredIds = new Set<string>()) {
+  const ids = new Set<string>()
+  walk(nodes, (node) => {
+    if (node.id && !ignoredIds.has(node.id)) ids.add(node.id)
+  })
+  return ids
+}
+
+function duplicateNodeIds(nodes: RoadmapNode[], existingIds: Set<string>) {
+  const duplicates = new Set<string>()
+  walk(nodes, (node) => {
+    if (node.id && existingIds.has(node.id)) duplicates.add(node.id)
+  })
+  return [...duplicates]
+}
+
+function replaceNodeWithNodes(nodes: RoadmapNode[], id: string, replacements: RoadmapNode[]): RoadmapNode[] {
+  return nodes.flatMap((node) => {
+    if (node.id === id) return replacements
+    return { ...node, children: replaceNodeWithNodes(node.children, id, replacements) }
+  })
+}
+
 function nodeMarkdown(node: RoadmapNode, depth = 1, includeChildren = false): string {
   const lines = [
     `${'#'.repeat(Math.min(depth, 6))} ${node.id} — ${node.title}`,
@@ -337,6 +362,7 @@ export function RoadmapEditor({
   const [query, setQuery] = useState('')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [importMode, setImportMode] = useState<ImportMode>('replace-project')
   const [importText, setImportText] = useState('')
   const [showPrint, setShowPrint] = useState(false)
   const [printScope, setPrintScope] = useState<'selected' | 'branch' | 'all'>('all')
@@ -347,6 +373,10 @@ export function RoadmapEditor({
 
   const flatNodes = useMemo(() => flatten(document.nodes), [document.nodes])
   const selectedNode = selectedId === null ? null : findNode(document.nodes, selectedId)
+  const selectedFlatNode = useMemo(
+    () => flatNodes.find(({ node }) => node.id === selectedId) ?? null,
+    [flatNodes, selectedId],
+  )
   const projectProgress = useMemo(() => {
     if (document.nodes.length === 0) return 0
     const totalProgress = document.nodes.reduce((total, node) => total + nodeProgress(node), 0)
@@ -422,14 +452,64 @@ export function RoadmapEditor({
     downloadText(`${selectedNode.id || 'rama'}.json`, stringifyRoadmapJson({ ...document, nodes: [selectedNode] }))
   }
 
-  function importProject() {
+  function openImport(mode: ImportMode) {
+    setImportMode(mode)
+    setShowImport(true)
+    setErrorMessage('')
+  }
+
+  function closeImport() {
+    setShowImport(false)
+    setImportText('')
+    setErrorMessage('')
+  }
+
+  function importJson() {
     const result = parseRoadmapJson(importText)
     if (!result.document) {
       setErrorMessage(result.errors.join(' '))
       return
     }
-    onChange({ ...result.document, nodes: applyAutomaticStatuses(result.document.nodes) })
-    setSelectedId(result.document.nodes[0]?.id ?? '')
+
+    const importedNodes = applyAutomaticStatuses(result.document.nodes)
+    if (importedNodes.length === 0) {
+      setErrorMessage('El JSON no contiene ninguna fase.')
+      return
+    }
+
+    if (importMode === 'replace-project') {
+      onChange({ ...result.document, nodes: importedNodes })
+      setSelectedId(importedNodes[0]?.id ?? '')
+      setShowImport(false)
+      setImportText('')
+      setErrorMessage('')
+      return
+    }
+
+    if (!selectedNode) {
+      setErrorMessage('Selecciona una fase antes de importar una rama.')
+      return
+    }
+
+    const ignoredIds = importMode === 'replace-selected' ? new Set(branchIds(selectedNode)) : new Set<string>()
+    const duplicates = duplicateNodeIds(importedNodes, collectNodeIds(document.nodes, ignoredIds))
+    if (duplicates.length > 0) {
+      setErrorMessage(`El JSON contiene IDs que ya existen en este roadmap: ${duplicates.join(', ')}.`)
+      return
+    }
+
+    if (importMode === 'append-to-selected') {
+      emitNodes(updateNode(document.nodes, selectedNode.id, (node) => ({
+        ...node,
+        children: [...node.children, ...importedNodes],
+      })))
+      setExpandedIds((current) => new Set([...current, selectedNode.id]))
+      setSelectedId(importedNodes[0]?.id ?? selectedNode.id)
+    } else {
+      emitNodes(replaceNodeWithNodes(document.nodes, selectedNode.id, importedNodes))
+      setSelectedId(importedNodes[0]?.id ?? null)
+    }
+
     setShowImport(false)
     setImportText('')
     setErrorMessage('')
@@ -562,7 +642,7 @@ export function RoadmapEditor({
         </span>
         <span className={`sync-state ${syncStatus}`}>{syncLabel(syncStatus)}{syncError ? ` · ${syncError}` : ''}</span>
         <input aria-label="Buscar" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar" type="search" value={query} />
-        <button onClick={() => setShowImport(true)} type="button">Importar JSON</button>
+        <button onClick={() => openImport('replace-project')} type="button">Importar</button>
         <button onClick={exportProject} type="button">Exportar JSON</button>
         <button onClick={exportBranch} type="button">Exportar rama</button>
         <button onClick={() => setShowPrint(true)} type="button">Imprimir</button>
@@ -596,6 +676,18 @@ export function RoadmapEditor({
                   <span style={{ width: `${nodeProgress(selectedNode)}%` }} />
                 </div>
               </div>
+              <div className="editor-actions no-print">
+                <button onClick={() => addNode(selectedNode.id)} type="button">Añadir subfase</button>
+                <button
+                  className="secondary-button"
+                  onClick={() => addNode(selectedFlatNode?.parentId ?? '', (selectedFlatNode?.index ?? 0) + 1)}
+                  type="button"
+                >
+                  Añadir hermana
+                </button>
+                <button className="secondary-button" onClick={() => openImport('append-to-selected')} type="button">Importar como subfases</button>
+                <button className="secondary-button" onClick={() => openImport('replace-selected')} type="button">Reemplazar esta rama</button>
+              </div>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onChange={(event) => updateSelected('id', event.target.value)} value={selectedNode.id} /></label>
                 <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>
@@ -618,11 +710,45 @@ export function RoadmapEditor({
       {showImport ? (
         <div className="modal-backdrop no-print">
           <section className="modal">
-            <h2>Importar proyecto JSON</h2>
+            <h2>Importar JSON</h2>
+            <div className="import-modes" role="group" aria-label="Modo de importación">
+              <label>
+                <input
+                  checked={importMode === 'append-to-selected'}
+                  disabled={!selectedNode}
+                  name="import-mode"
+                  onChange={() => setImportMode('append-to-selected')}
+                  type="radio"
+                />
+                Añadir como subfases
+              </label>
+              <label>
+                <input
+                  checked={importMode === 'replace-selected'}
+                  disabled={!selectedNode}
+                  name="import-mode"
+                  onChange={() => setImportMode('replace-selected')}
+                  type="radio"
+                />
+                Reemplazar rama seleccionada
+              </label>
+              <label>
+                <input
+                  checked={importMode === 'replace-project'}
+                  name="import-mode"
+                  onChange={() => setImportMode('replace-project')}
+                  type="radio"
+                />
+                Reemplazar proyecto completo
+              </label>
+            </div>
+            {importMode !== 'replace-project' && selectedNode ? (
+              <p className="modal-hint">Destino: {selectedNode.id || 'sin-id'} — {selectedNode.title || 'Nueva fase'}</p>
+            ) : null}
             <textarea aria-label="Pegar JSON" onChange={(event) => setImportText(event.target.value)} value={importText} />
             <div className="modal-actions">
-              <button onClick={importProject} type="button">Importar</button>
-              <button className="secondary-button" onClick={() => setShowImport(false)} type="button">Cancelar</button>
+              <button onClick={importJson} type="button">Importar</button>
+              <button className="secondary-button" onClick={closeImport} type="button">Cancelar</button>
             </div>
           </section>
         </div>

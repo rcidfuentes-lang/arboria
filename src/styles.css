@@ -1062,6 +1062,18 @@ h2 {
   height: 100%;
 }
 
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.editor-actions button {
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+}
+
 .editor-fields {
   display: grid;
   gap: 0.75rem;
@@ -1118,6 +1130,39 @@ h2 {
 
 .modal textarea {
   min-height: 280px;
+}
+
+.import-modes {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.import-modes label {
+  align-items: center;
+  background: #fbfdfb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  display: flex;
+  font-weight: 800;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.import-modes input {
+  margin: 0;
+  width: auto;
+}
+
+.import-modes label:has(input:checked) {
+  background: var(--panel-soft);
+  border-color: rgba(8, 140, 63, 0.35);
+}
+
+.modal-hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
 .modal-actions {
