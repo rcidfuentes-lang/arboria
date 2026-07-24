@@ -243,6 +243,19 @@ h2 {
   padding: 0.65rem;
 }
 
+.project-import {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+}
+
+.project-import textarea {
+  min-height: 88px;
+}
+
 .project-list li > button:first-child {
   background: transparent;
   color: var(--text);
@@ -431,9 +444,13 @@ h2 {
   border-radius: 8px;
   display: grid;
   gap: 0.4rem;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(180px, 1fr) auto auto;
   padding: 0.35rem;
   padding-left: calc(0.35rem + var(--depth, 0) * 1rem);
+}
+
+.tree-node[draggable='true'] {
+  cursor: grab;
 }
 
 .tree-node.selected {
@@ -512,6 +529,17 @@ h2 {
   color: #a23030;
 }
 
+.copy-chip {
+  background: #edf5ef;
+  color: var(--brand-strong);
+  font-size: 0.75rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.copy-chip:hover {
+  background: #dbeee0;
+}
+
 .node-form {
   align-content: start;
   display: grid;
@@ -527,6 +555,87 @@ h2 {
   display: grid;
   gap: 0.8rem;
   grid-template-columns: 1fr 120px;
+}
+
+.import-export-panel,
+.navigation-panel,
+.markdown-panel,
+.validation-box {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+}
+
+.import-export-panel textarea {
+  min-height: 120px;
+}
+
+.filter-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.check-label {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.9rem;
+  font-weight: 700;
+  gap: 0.35rem;
+}
+
+.check-label input {
+  margin: 0;
+  width: auto;
+}
+
+.compact-label {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.9rem;
+  font-weight: 800;
+  gap: 0.45rem;
+}
+
+.compact-label input,
+.compact-label select {
+  margin: 0;
+  max-width: 140px;
+  padding: 0.5rem;
+}
+
+.validation-box {
+  color: var(--muted);
+}
+
+.validation-box strong {
+  color: var(--text);
+}
+
+.error-list,
+.error-text {
+  color: var(--danger);
+}
+
+.markdown-preview {
+  background: #f8fbf8;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  max-height: 360px;
+  overflow: auto;
+  padding: 1rem;
+  white-space: pre-wrap;
+}
+
+.print-surface {
+  display: none;
 }
 
 @media (max-width: 760px) {
@@ -556,5 +665,72 @@ h2 {
 
   .move-controls {
     grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .no-print,
+  .topbar,
+  .project-sidebar,
+  .node-form,
+  .tree-actions,
+  .editor-toolbar,
+  .sync-state,
+  .markdown-panel,
+  .navigation-panel,
+  .import-export-panel {
+    display: none !important;
+  }
+
+  .workspace-shell,
+  .workspace-grid,
+  .editor-placeholder,
+  .roadmap-editor {
+    border: 0;
+    box-shadow: none;
+    display: block;
+    max-width: none;
+    min-height: auto;
+    padding: 0;
+  }
+
+  .tree-panel {
+    display: none;
+  }
+
+  .print-surface {
+    color: #111111;
+    display: block;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+
+  .print-surface pre {
+    font: inherit;
+    white-space: pre-wrap;
+  }
+
+  .print-surface.tree pre {
+    border-left: 2px solid #222222;
+    padding-left: 1rem;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  p,
+  li,
+  pre {
+    break-inside: avoid;
   }
 }

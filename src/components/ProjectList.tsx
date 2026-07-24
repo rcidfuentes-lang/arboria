@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { RoadmapEditor } from './RoadmapEditor'
+import {
+  RoadmapEditor,
+  normalizeRoadmapDocument,
+  parseRoadmapJson,
+  stringifyRoadmapJson,
+} from './RoadmapEditor'
 import { supabase } from '../lib/supabase'
 import type { RoadmapDocument, RoadmapProject } from '../types/roadmap'
 
@@ -19,8 +24,15 @@ const initialDocument: RoadmapDocument = {
       id: 'vision',
       title: 'Vision del proyecto',
       status: 'pending',
-      goal: 'Definir la direccion principal del roadmap.',
-      expectedOutcome: 'Un objetivo claro para guiar el arbol.',
+      objective: 'Definir la direccion principal del roadmap.',
+      description: '',
+      expectedResult: 'Un objetivo claro para guiar el arbol.',
+      inScope: [],
+      outOfScope: [],
+      dependencies: [],
+      documents: [],
+      commits: [],
+      notes: '',
       children: [],
     },
   ],
@@ -50,15 +62,23 @@ function localStorageKey(projectId: string) {
 }
 
 function normalizeDocument(document: RoadmapDocument, project: RoadmapProject) {
+  const normalizedDocument = normalizeRoadmapDocument(document)
   return {
-    ...initialDocument,
-    ...document,
+    ...normalizedDocument,
     project: {
-      id: document.project?.id ?? project.slug,
-      name: document.project?.name ?? project.name,
+      id: normalizedDocument.project.id || project.slug,
+      name: normalizedDocument.project.name || project.name,
     },
-    nodes: Array.isArray(document.nodes) ? document.nodes : [],
   }
+}
+
+function downloadText(filename: string, text: string, type = 'application/json') {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const link = window.document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 export function ProjectList({ session }: ProjectListProps) {
@@ -71,6 +91,7 @@ export function ProjectList({ session }: ProjectListProps) {
   >('synced')
   const [syncError, setSyncError] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [projectImportText, setProjectImportText] = useState('')
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -135,6 +156,58 @@ export function ProjectList({ session }: ProjectListProps) {
     }
 
     setIsCreating(false)
+  }
+
+  async function handleImportProject(document: RoadmapDocument) {
+    setErrorMessage('')
+    setIsCreating(true)
+
+    const baseName = document.project.name || 'Roadmap importado'
+    const slug = `${createSlug(document.project.id || baseName)}-${Date.now().toString(36)}`
+    const nextDocument: RoadmapDocument = {
+      ...normalizeRoadmapDocument(document),
+      project: {
+        id: slug,
+        name: baseName,
+      },
+    }
+
+    const { data, error } = await supabase
+      .from('roadmap_projects')
+      .insert({
+        owner_id: session.user.id,
+        name: baseName,
+        slug,
+        document: nextDocument,
+      })
+      .select('*')
+      .single()
+
+    if (error) {
+      setErrorMessage(error.message)
+    } else {
+      const createdProject = data as RoadmapProject
+      localStorage.setItem(localStorageKey(createdProject.id), JSON.stringify(createdProject.document))
+      setProjects((currentProjects) => [createdProject, ...currentProjects])
+      setActiveProjectId(createdProject.id)
+      setProjectImportText('')
+    }
+
+    setIsCreating(false)
+  }
+
+  function handleImportTextAsProject() {
+    const result = parseRoadmapJson(projectImportText)
+    if (!result.document) {
+      setErrorMessage(result.errors.join(' '))
+      return
+    }
+
+    handleImportProject(result.document)
+  }
+
+  function handleDownloadProject(project: RoadmapProject) {
+    downloadText(`${project.slug}.json`, stringifyRoadmapJson(normalizeDocument(project.document, project)))
   }
 
   function handleOpenProject(project: RoadmapProject) {
@@ -270,6 +343,22 @@ export function ProjectList({ session }: ProjectListProps) {
             </button>
           </div>
 
+          <div className="project-import">
+            <textarea
+              aria-label="Importar JSON como proyecto"
+              onChange={(event) => setProjectImportText(event.target.value)}
+              placeholder="Importar JSON como proyecto"
+              value={projectImportText}
+            />
+            <button
+              disabled={!projectImportText.trim() || isCreating}
+              onClick={handleImportTextAsProject}
+              type="button"
+            >
+              Importar JSON
+            </button>
+          </div>
+
           {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
           {isLoading ? <p className="muted">Cargando proyectos...</p> : null}
@@ -300,6 +389,13 @@ export function ProjectList({ session }: ProjectListProps) {
                 >
                   Eliminar
                 </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => handleDownloadProject(project)}
+                  type="button"
+                >
+                  Descargar JSON
+                </button>
               </li>
             ))}
           </ul>
@@ -309,6 +405,7 @@ export function ProjectList({ session }: ProjectListProps) {
           {activeProject ? (
             <RoadmapEditor
               document={normalizeDocument(activeProject.document, activeProject)}
+              onImportAsProject={handleImportProject}
               onChange={handleDocumentChange}
               syncError={syncError}
               syncStatus={syncStatus}

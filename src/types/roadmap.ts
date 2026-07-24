@@ -9,12 +9,24 @@ export type RoadmapDocument = {
 
 export type RoadmapNodeStatus = 'pending' | 'in_progress' | 'done' | 'blocked'
 
+export type RoadmapDocumentRef = {
+  title: string
+  href: string
+}
+
 export type RoadmapNode = {
   id: string
   title: string
   status: RoadmapNodeStatus
-  goal: string
-  expectedOutcome: string
+  objective: string
+  description: string
+  expectedResult: string
+  inScope: string[]
+  outOfScope: string[]
+  dependencies: string[]
+  documents: RoadmapDocumentRef[]
+  commits: string[]
+  notes: string
   children: RoadmapNode[]
 }
 
