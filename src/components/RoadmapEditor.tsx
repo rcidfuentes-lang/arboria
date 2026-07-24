@@ -47,6 +47,42 @@ function normalizeStatus(value: unknown): RoadmapNodeStatus {
   return 'pending'
 }
 
+function statusProgress(status: RoadmapNodeStatus) {
+  if (status === 'closed') return 100
+  if (status === 'in_progress') return 50
+  return 0
+}
+
+function nodeProgress(node: RoadmapNode): number {
+  if (node.children.length === 0) return statusProgress(node.status)
+
+  const childProgress = node.children.reduce((total, child) => total + nodeProgress(child), 0)
+  return Math.round(childProgress / node.children.length)
+}
+
+function deriveBranchStatus(node: RoadmapNode): RoadmapNodeStatus {
+  if (node.children.length === 0) return node.status
+
+  if (node.children.every((child) => child.status === 'closed')) return 'closed'
+  if (node.status === 'closed') return 'in_progress'
+  if (
+    (node.status === 'planned' || node.status === 'pending') &&
+    node.children.some((child) => child.status === 'in_progress' || child.status === 'closed')
+  ) {
+    return 'in_progress'
+  }
+
+  return node.status
+}
+
+function applyAutomaticStatuses(nodes: RoadmapNode[]): RoadmapNode[] {
+  return nodes.map((node) => {
+    const children = applyAutomaticStatuses(node.children)
+    const nextNode = { ...node, children }
+    return { ...nextNode, status: deriveBranchStatus(nextNode) }
+  })
+}
+
 function section(title: string, value: unknown) {
   if (Array.isArray(value)) {
     const items = value
@@ -102,7 +138,7 @@ export function normalizeRoadmapDocument(value: unknown): RoadmapDocument {
       id: String(document.project?.id || 'roadmap'),
       name: String(document.project?.name || 'Roadmap'),
     },
-    nodes: Array.isArray(document.nodes) ? document.nodes.map(normalizeNode) : [],
+    nodes: Array.isArray(document.nodes) ? applyAutomaticStatuses(document.nodes.map(normalizeNode)) : [],
   }
 }
 
@@ -246,6 +282,7 @@ function nodeMarkdown(node: RoadmapNode, depth = 1, includeChildren = false): st
     `${'#'.repeat(Math.min(depth, 6))} ${node.id} — ${node.title}`,
     '',
     `**Estado:** ${statusLabel(node.status)}`,
+    `**Progreso:** ${nodeProgress(node)}%`,
   ]
   if (node.content.trim()) lines.push('', node.content.trim())
   if (includeChildren) {
@@ -310,6 +347,11 @@ export function RoadmapEditor({
 
   const flatNodes = useMemo(() => flatten(document.nodes), [document.nodes])
   const selectedNode = selectedId === null ? null : findNode(document.nodes, selectedId)
+  const projectProgress = useMemo(() => {
+    if (document.nodes.length === 0) return 0
+    const totalProgress = document.nodes.reduce((total, node) => total + nodeProgress(node), 0)
+    return Math.round(totalProgress / document.nodes.length)
+  }, [document.nodes])
 
   useEffect(() => {
     if (!selectedNode && flatNodes[0]) setSelectedId(flatNodes[0].node.id)
@@ -320,7 +362,7 @@ export function RoadmapEditor({
   }, [focusIdNonce])
 
   function emitNodes(nodes: RoadmapNode[]) {
-    onChange({ ...document, nodes })
+    onChange({ ...document, nodes: applyAutomaticStatuses(nodes) })
   }
 
   function selectNode(node: RoadmapNode) {
@@ -386,7 +428,7 @@ export function RoadmapEditor({
       setErrorMessage(result.errors.join(' '))
       return
     }
-    onChange(result.document)
+    onChange({ ...result.document, nodes: applyAutomaticStatuses(result.document.nodes) })
     setSelectedId(result.document.nodes[0]?.id ?? '')
     setShowImport(false)
     setImportText('')
@@ -442,6 +484,7 @@ export function RoadmapEditor({
     if (!visibleIds.has(node.id)) return null
     const expanded = expandedIds.has(node.id)
     const parentOptions = flatNodes.filter((item) => item.node.id !== node.id && !contains(node, item.node.id))
+    const progress = nodeProgress(node)
 
     return (
       <li
@@ -468,6 +511,7 @@ export function RoadmapEditor({
             <strong>{node.id || 'sin-id'}</strong>
             <span>{node.title || 'Nueva fase'}</span>
           </button>
+          <span className="progress-chip" title={`${progress}% completado`}>{progress}%</span>
           <button className="copy-button" onClick={() => copyText(nodeMarkdown(node))} type="button">Copiar</button>
           <button className="menu-button" onClick={() => setOpenMenuId(openMenuId === node.id ? null : node.id)} type="button">···</button>
         </div>
@@ -512,6 +556,10 @@ export function RoadmapEditor({
             value={document.project.name}
           />
         </div>
+        <span className="project-progress" title={`${projectProgress}% completado`}>
+          <span style={{ width: `${projectProgress}%` }} />
+          <strong>{projectProgress}%</strong>
+        </span>
         <span className={`sync-state ${syncStatus}`}>{syncLabel(syncStatus)}{syncError ? ` · ${syncError}` : ''}</span>
         <input aria-label="Buscar" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar" type="search" value={query} />
         <button onClick={() => setShowImport(true)} type="button">Importar JSON</button>
@@ -539,6 +587,15 @@ export function RoadmapEditor({
         <section className="text-editor">
           {selectedNode ? (
             <>
+              <div className="selected-progress no-print">
+                <div>
+                  <span>Progreso</span>
+                  <strong>{nodeProgress(selectedNode)}%</strong>
+                </div>
+                <div className="progress-track" aria-hidden="true">
+                  <span style={{ width: `${nodeProgress(selectedNode)}%` }} />
+                </div>
+              </div>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onChange={(event) => updateSelected('id', event.target.value)} value={selectedNode.id} /></label>
                 <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>

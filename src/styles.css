@@ -776,7 +776,7 @@ h2 {
   border-bottom: 1px solid var(--border);
   display: grid;
   gap: 0.65rem;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(180px, 260px) repeat(6, auto);
+  grid-template-columns: minmax(220px, 1fr) 86px auto minmax(180px, 260px) repeat(6, auto);
   padding: 0.7rem 0.9rem;
 }
 
@@ -802,6 +802,31 @@ h2 {
   font-size: 1.1rem;
   font-weight: 800;
   padding: 0.4rem;
+}
+
+.project-progress {
+  background: #e8eee9;
+  border-radius: 999px;
+  display: block;
+  height: 28px;
+  overflow: hidden;
+  position: relative;
+}
+
+.project-progress span {
+  background: var(--brand);
+  display: block;
+  height: 100%;
+}
+
+.project-progress strong {
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  inset: 0;
+  line-height: 28px;
+  position: absolute;
+  text-align: center;
 }
 
 .roadmap-body {
@@ -855,7 +880,7 @@ h2 {
   border-radius: 6px;
   display: grid;
   gap: 0.35rem;
-  grid-template-columns: 12px 26px minmax(0, 1fr) auto auto;
+  grid-template-columns: 12px 26px minmax(0, 1fr) 52px auto auto;
   padding: 0.18rem 0.25rem 0.18rem calc(0.25rem + var(--depth, 0) * 1.1rem);
 }
 
@@ -934,6 +959,18 @@ h2 {
   background: #088c3f;
 }
 
+.progress-chip {
+  background: #e8f1eb;
+  border: 1px solid #d2e1d6;
+  border-radius: 999px;
+  color: var(--brand-strong);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.2rem 0.35rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .copy-button,
 .menu-button {
   background: transparent;
@@ -982,6 +1019,47 @@ h2 {
   min-height: 0;
   overflow: hidden;
   padding: 1rem;
+}
+
+.selected-progress {
+  background: #fbfdfb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+}
+
+.selected-progress > div:first-child {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.selected-progress span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.selected-progress strong {
+  color: var(--brand-strong);
+  font-size: 1rem;
+}
+
+.progress-track {
+  background: #e8eee9;
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.progress-track span {
+  background: var(--brand);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
 }
 
 .editor-fields {
