@@ -10,6 +10,8 @@ export function Login() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!supabase) return
+
     setErrorMessage('')
     setIsLoading(true)
 

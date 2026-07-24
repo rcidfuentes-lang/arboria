@@ -90,12 +90,13 @@ export function ProjectList({ session }: ProjectListProps) {
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [activeProjectId, projects],
   )
+  const supabaseClient = supabase!
 
   async function loadProjects() {
     setErrorMessage('')
     setIsLoading(true)
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('roadmap_projects')
       .select('*')
       .order('updated_at', { ascending: false })
@@ -129,7 +130,7 @@ export function ProjectList({ session }: ProjectListProps) {
       },
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('roadmap_projects')
       .insert({
         owner_id: session.user.id,
@@ -165,7 +166,7 @@ export function ProjectList({ session }: ProjectListProps) {
       },
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('roadmap_projects')
       .insert({
         owner_id: session.user.id,
@@ -245,7 +246,7 @@ export function ProjectList({ session }: ProjectListProps) {
     const timeoutId = window.setTimeout(async () => {
       setSyncStatus('syncing')
       const updatedAt = new Date().toISOString()
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from('roadmap_projects')
         .update({
           document: activeProject.document,
@@ -281,7 +282,7 @@ export function ProjectList({ session }: ProjectListProps) {
   async function handleDeleteProject(projectId: string) {
     setErrorMessage('')
 
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('roadmap_projects')
       .delete()
       .eq('id', projectId)
@@ -307,7 +308,7 @@ export function ProjectList({ session }: ProjectListProps) {
         document={normalizeDocument(activeProject.document, activeProject)}
         onBack={() => setActiveProjectId(null)}
         onChange={handleDocumentChange}
-        onSignOut={() => supabase.auth.signOut()}
+        onSignOut={() => supabaseClient.auth.signOut()}
         syncError={syncError}
         syncStatus={syncStatus}
       />
@@ -327,7 +328,7 @@ export function ProjectList({ session }: ProjectListProps) {
 
         <div className="account-actions">
           <span>{session.user.email}</span>
-          <button type="button" onClick={() => supabase.auth.signOut()}>
+          <button type="button" onClick={() => supabaseClient.auth.signOut()}>
             Cerrar sesion
           </button>
         </div>
