@@ -41,10 +41,10 @@ type CanvasNode = FlatNode & {
   y: number
 }
 
-const canvasNodeWidth = 230
-const canvasNodeHeight = 86
-const canvasColumnGap = 290
-const canvasRowGap = 112
+const canvasNodeWidth = 380
+const canvasNodeHeight = 126
+const canvasColumnGap = 470
+const canvasRowGap = 158
 
 const statusOptions: Array<{ label: string; value: RoadmapNodeStatus }> = [
   { label: 'Planificada', value: 'planned' },
@@ -924,6 +924,7 @@ export function RoadmapEditor({
           className={`canvas-card-main ${sameDropTarget(dropTarget, { type: 'child', parentId: node.id }) ? 'drop-child' : ''}`}
           onDragOver={(event) => activateDropTarget(event, { type: 'child', parentId: node.id })}
           onDrop={(event) => handleDrop(event, { type: 'child', parentId: node.id })}
+          title={`${node.title || 'Nueva fase'} (${node.id || 'sin-id'})`}
         >
           <span className="canvas-grip" title="Arrastrar rama"><Icon name="grip" /></span>
           <button
@@ -940,9 +941,9 @@ export function RoadmapEditor({
             {node.children.length === 0 ? null : <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />}
           </button>
           <span className={`state-dot ${node.status}`} />
-          <div>
-            <strong>{node.id || 'sin-id'}</strong>
-            <span>{node.title || 'Nueva fase'}</span>
+          <div className="canvas-node-text">
+            <strong>{node.title || 'Nueva fase'}</strong>
+            <span>{node.id || 'sin-id'}</span>
           </div>
           <span className="canvas-card-meta">
             {hiddenDescendants > 0 ? <span className="hidden-count">+{hiddenDescendants}</span> : null}
