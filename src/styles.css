@@ -877,7 +877,6 @@ h2 {
 
 .tree-mini-actions button,
 .copy-button,
-.quick-close-button,
 .menu-button,
 .tree-toggle,
 .node-menu button {
@@ -906,7 +905,7 @@ h2 {
   border-radius: 6px;
   display: grid;
   gap: 0.25rem;
-  grid-template-columns: 12px 22px minmax(0, 1fr) 50px 62px 32px;
+  grid-template-columns: 12px 22px minmax(0, 1fr) 50px 32px;
   min-height: 34px;
   padding: 0.12rem 0.2rem 0.12rem calc(0.2rem + var(--depth, 0) * 1rem);
 }
@@ -999,7 +998,6 @@ h2 {
 }
 
 .copy-button,
-.quick-close-button,
 .menu-button {
   background: transparent;
   color: var(--muted);
@@ -1016,23 +1014,10 @@ h2 {
   display: none;
 }
 
-.quick-close-button {
-  font-size: 0.72rem;
-  font-weight: 800;
-  width: 62px;
-}
-
 .copy-button:hover,
-.quick-close-button:hover,
 .menu-button:hover {
   background: #edf5ef;
   color: var(--text);
-}
-
-.quick-close-button:disabled {
-  color: #9ca3af;
-  cursor: default;
-  opacity: 0.65;
 }
 
 .node-menu {

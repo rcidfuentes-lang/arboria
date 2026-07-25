@@ -621,16 +621,6 @@ export function RoadmapEditor({
             <span>{node.title || 'Nueva fase'}</span>
           </button>
           <span className="progress-chip" title={`${progress}% completado`}>{progress}%</span>
-          <button
-            aria-label={`Cerrar ${node.title || node.id || 'fase'}`}
-            className="quick-close-button"
-            disabled={node.status === 'closed'}
-            onClick={() => closeNode(node)}
-            title="Cerrar"
-            type="button"
-          >
-            Cerrar
-          </button>
           <button className="copy-button" onClick={() => copyText(nodeMarkdown(node))} type="button">Copiar</button>
           <button className="menu-button" onClick={() => setOpenMenuId(openMenuId === node.id ? null : node.id)} type="button">···</button>
         </div>
@@ -730,6 +720,7 @@ export function RoadmapEditor({
                 </button>
                 <button className="secondary-button" onClick={() => openImport('append-to-selected')} type="button">Importar como subfases</button>
                 <button className="secondary-button" onClick={() => openImport('replace-selected')} type="button">Reemplazar esta rama</button>
+                <button className="secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} type="button">Cerrar</button>
                 <button className="secondary-button" onClick={copySelectedJson} type="button">Copiar JSON</button>
               </div>
               <div className="editor-fields no-print">
