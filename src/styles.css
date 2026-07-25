@@ -804,7 +804,7 @@ h2 {
   border-bottom: 1px solid var(--border);
   display: grid;
   gap: 0.5rem;
-  grid-template-columns: minmax(180px, 1fr) 82px auto minmax(170px, 240px) auto auto;
+  grid-template-columns: minmax(180px, 1fr) 82px auto minmax(170px, 240px) auto auto auto;
   padding: 0.55rem 0.75rem;
 }
 
@@ -875,6 +875,29 @@ h2 {
   gap: 0.4rem;
 }
 
+.mode-switch {
+  background: #edf3ee;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+}
+
+.mode-switch button {
+  background: transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  min-height: 30px;
+  padding: 0.35rem 0.55rem;
+}
+
+.mode-switch button.active,
+.mode-switch button:hover {
+  background: var(--panel);
+  color: var(--brand-strong);
+}
+
 .roadmap-bar .sync-state {
   align-items: center;
   display: inline-flex;
@@ -889,6 +912,10 @@ h2 {
   display: grid;
   grid-template-columns: minmax(320px, 34%) minmax(0, 1fr);
   min-height: 0;
+}
+
+.roadmap-body.visual-mode {
+  grid-template-columns: minmax(240px, 22%) minmax(0, 1fr) minmax(320px, 34%);
 }
 
 .file-tree {
@@ -1101,6 +1128,144 @@ h2 {
   padding: 0.45rem;
 }
 
+.branch-canvas-panel {
+  background: #f8fbf8;
+  border-right: 1px solid var(--border);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.canvas-toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.canvas-toolbar button {
+  border-radius: 6px;
+  min-height: 34px;
+  padding: 0.45rem 0.65rem;
+}
+
+.canvas-root-drop {
+  background: #fffaf0;
+  border-bottom: 1px solid #ecddbd;
+  color: #735a1a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.5rem 0.75rem;
+  text-align: center;
+}
+
+.canvas-root-drop:hover {
+  background: #fff4d8;
+}
+
+.branch-canvas-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 1.25rem;
+}
+
+.branch-canvas {
+  position: relative;
+}
+
+.canvas-lines {
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+}
+
+.canvas-lines path {
+  fill: none;
+  stroke: #b7c8bc;
+  stroke-width: 2;
+}
+
+.canvas-card {
+  display: grid;
+  gap: 0.25rem;
+  position: absolute;
+  width: 230px;
+  z-index: 1;
+}
+
+.canvas-card.dragging {
+  opacity: 0.45;
+}
+
+.canvas-card-main {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(23, 49, 34, 0.08);
+  cursor: grab;
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: 20px 10px minmax(0, 1fr) auto;
+  min-height: 60px;
+  padding: 0.65rem;
+}
+
+.canvas-card-main.drop-child,
+.canvas-card.selected .canvas-card-main {
+  border-color: rgba(8, 140, 63, 0.45);
+  box-shadow: 0 0 0 3px rgba(8, 140, 63, 0.12), 0 10px 24px rgba(23, 49, 34, 0.08);
+}
+
+.canvas-card-main > div {
+  display: grid;
+  min-width: 0;
+}
+
+.canvas-card-main strong,
+.canvas-card-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-card-main div span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.canvas-grip {
+  color: #839487;
+  display: inline-flex;
+}
+
+.canvas-drop-zone {
+  align-items: center;
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  color: transparent;
+  display: flex;
+  font-size: 0.68rem;
+  font-weight: 900;
+  height: 18px;
+  justify-content: center;
+  text-transform: uppercase;
+}
+
+.canvas-card:hover .canvas-drop-zone,
+.canvas-drop-zone.active {
+  background: #eef6ef;
+  border-color: rgba(8, 140, 63, 0.34);
+  color: var(--brand-strong);
+}
+
 .text-editor {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
@@ -1108,6 +1273,10 @@ h2 {
   min-height: 0;
   overflow: hidden;
   padding: 0.9rem 1rem 1rem;
+}
+
+.text-editor.compact {
+  background: #fbfdfb;
 }
 
 .selected-progress {
@@ -1288,7 +1457,17 @@ h2 {
     grid-template-rows: 42% 58%;
   }
 
+  .roadmap-body.visual-mode {
+    grid-template-columns: 1fr;
+    grid-template-rows: 28% 38% 34%;
+  }
+
   .file-tree {
+    border-bottom: 1px solid var(--border);
+    border-right: 0;
+  }
+
+  .branch-canvas-panel {
     border-bottom: 1px solid var(--border);
     border-right: 0;
   }

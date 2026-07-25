@@ -8,6 +8,8 @@ type IconName =
   | 'download'
   | 'fileBranch'
   | 'folderOpen'
+  | 'gitMerge'
+  | 'grip'
   | 'import'
   | 'logOut'
   | 'maximize'
@@ -35,6 +37,8 @@ const paths: Record<IconName, string[]> = {
   download: ['M12 3v12', 'm7-7-7 7-7-7', 'M5 21h14'],
   fileBranch: ['M6 3v12', 'M18 9a3 3 0 1 0-3-3', 'M6 15a3 3 0 1 0 3 3', 'M15 6a9 9 0 0 0-9 9'],
   folderOpen: ['M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z', 'M3 11h18'],
+  gitMerge: ['M18 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M6 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M6 21V6', 'M15 15c-4.5 0-9-3.5-9-9'],
+  grip: ['M9 5h.01', 'M15 5h.01', 'M9 12h.01', 'M15 12h.01', 'M9 19h.01', 'M15 19h.01'],
   import: ['M12 3v12', 'm7-7-7 7-7-7', 'M5 21h14'],
   logOut: ['M10 17l5-5-5-5', 'M15 12H3', 'M21 3v18'],
   maximize: ['M8 3H3v5', 'M16 3h5v5', 'M8 21H3v-5', 'M21 16v5h-5'],

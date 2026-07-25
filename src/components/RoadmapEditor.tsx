@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, DragEvent } from 'react'
 import type {
   RoadmapDocument,
   RoadmapNode,
@@ -27,6 +27,21 @@ type FlatNode = {
 }
 
 type ImportMode = 'replace-project' | 'append-to-selected' | 'replace-selected'
+type EditorMode = 'outline' | 'canvas'
+type DropTarget =
+  | { type: 'root' }
+  | { type: 'child'; parentId: string }
+  | { type: 'sibling'; parentId: string; index: number }
+
+type CanvasNode = FlatNode & {
+  x: number
+  y: number
+}
+
+const canvasNodeWidth = 230
+const canvasNodeHeight = 86
+const canvasColumnGap = 290
+const canvasRowGap = 112
 
 const statusOptions: Array<{ label: string; value: RoadmapNodeStatus }> = [
   { label: 'Planificada', value: 'planned' },
@@ -194,8 +209,9 @@ export function stringifyRoadmapJson(value: unknown) {
 }
 
 function createNode(): RoadmapNode {
+  const id = `fase-${Date.now().toString(36)}`
   return {
-    id: '',
+    id,
     title: 'Nueva fase',
     status: 'pending',
     content: '',
@@ -223,6 +239,14 @@ function flatten(nodes: RoadmapNode[]) {
     result.push({ node, parentId, index, depth, path })
   })
   return result
+}
+
+function layoutCanvasNodes(nodes: RoadmapNode[]) {
+  return flatten(nodes).map((item, order): CanvasNode => ({
+    ...item,
+    x: item.depth * canvasColumnGap,
+    y: order * canvasRowGap,
+  }))
 }
 
 function findNode(nodes: RoadmapNode[], id: string): RoadmapNode | null {
@@ -263,6 +287,10 @@ function removeNode(nodes: RoadmapNode[], id: string): RoadmapNode[] {
   return nodes
     .filter((node) => node.id !== id)
     .map((node) => ({ ...node, children: removeNode(node.children, id) }))
+}
+
+function clampIndex(index: number, length: number) {
+  return Math.max(0, Math.min(index, length))
 }
 
 function cloneBranch(node: RoadmapNode): RoadmapNode {
@@ -386,6 +414,9 @@ export function RoadmapEditor({
   const [printScope, setPrintScope] = useState<'selected' | 'branch' | 'all'>('all')
   const [errorMessage, setErrorMessage] = useState('')
   const [focusIdNonce, setFocusIdNonce] = useState(0)
+  const [editorMode, setEditorMode] = useState<EditorMode>('canvas')
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const idInputRef = useRef<HTMLInputElement>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
 
@@ -400,6 +431,16 @@ export function RoadmapEditor({
     const totalProgress = document.nodes.reduce((total, node) => total + nodeProgress(node), 0)
     return Math.round(totalProgress / document.nodes.length)
   }, [document.nodes])
+  const canvasNodes = useMemo(() => layoutCanvasNodes(document.nodes), [document.nodes])
+  const canvasLookup = useMemo(
+    () => new Map(canvasNodes.map((item) => [item.node.id, item])),
+    [canvasNodes],
+  )
+  const canvasWidth = Math.max(
+    720,
+    (Math.max(0, ...canvasNodes.map((item) => item.depth)) + 1) * canvasColumnGap,
+  )
+  const canvasHeight = Math.max(440, canvasNodes.length * canvasRowGap + 60)
 
   useEffect(() => {
     if (!selectedNode && flatNodes[0]) setSelectedId(flatNodes[0].node.id)
@@ -444,6 +485,82 @@ export function RoadmapEditor({
     if (parentId === node.id || contains(node, parentId)) return
     emitNodes(insertNode(removeNode(document.nodes, node.id), parentId, node))
     if (parentId) setExpandedIds((current) => new Set([...current, parentId]))
+  }
+
+  function moveBranch(nodeId: string, target: DropTarget) {
+    const node = findNode(document.nodes, nodeId)
+    const source = flatNodes.find((item) => item.node.id === nodeId)
+    if (!node || !source) return
+
+    if (target.type === 'root') {
+      emitNodes(insertNode(removeNode(document.nodes, node.id), '', node))
+      setSelectedId(node.id)
+      return
+    }
+
+    if (target.type === 'child') {
+      if (target.parentId === node.id || contains(node, target.parentId)) return
+      emitNodes(insertNode(removeNode(document.nodes, node.id), target.parentId, node))
+      setExpandedIds((current) => new Set([...current, target.parentId]))
+      setSelectedId(node.id)
+      return
+    }
+
+    if (target.parentId === node.id) return
+    const targetParent = target.parentId ? findNode(document.nodes, target.parentId) : null
+    const targetSiblings = target.parentId ? targetParent?.children ?? [] : document.nodes
+    const sameParent = source.parentId === target.parentId
+    const adjustedIndex = sameParent && source.index < target.index ? target.index - 1 : target.index
+    emitNodes(insertNode(removeNode(document.nodes, node.id), target.parentId, node, clampIndex(adjustedIndex, targetSiblings.length)))
+    setSelectedId(node.id)
+  }
+
+  function canDropOn(target: DropTarget, nodeId = draggedId) {
+    if (!nodeId) return false
+    const node = findNode(document.nodes, nodeId)
+    if (!node) return false
+    if (target.type === 'child') return target.parentId !== node.id && !contains(node, target.parentId)
+    if (target.type === 'sibling') return target.parentId !== node.id
+    return true
+  }
+
+  function handleDragStart(event: DragEvent, node: RoadmapNode) {
+    setDraggedId(node.id)
+    setOpenMenuId(null)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', node.id)
+  }
+
+  function handleDrop(event: DragEvent, target: DropTarget) {
+    event.preventDefault()
+    const nodeId = event.dataTransfer.getData('text/plain') || draggedId
+    setDraggedId(null)
+    setDropTarget(null)
+    if (!nodeId || !canDropOn(target, nodeId)) return
+    moveBranch(nodeId, target)
+  }
+
+  function activateDropTarget(event: DragEvent, target: DropTarget) {
+    if (!canDropOn(target)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDropTarget(target)
+  }
+
+  function mergeRootsIntoSelectedRoot() {
+    if (!selectedNode) return
+    const movableRoots = document.nodes.filter((node) => node.id !== selectedNode.id && !contains(node, selectedNode.id))
+    if (movableRoots.length === 0) return
+    const movableRootIds = new Set(movableRoots.map((node) => node.id))
+    const nextNodes = document.nodes
+      .filter((node) => !movableRootIds.has(node.id))
+      .map((node) =>
+        node.id === selectedNode.id
+          ? { ...node, children: [...node.children, ...movableRoots] }
+          : node,
+      )
+    emitNodes(nextNodes)
+    setExpandedIds((current) => new Set([...current, selectedNode.id]))
   }
 
   function updateSelected<K extends keyof RoadmapNode>(key: K, value: RoadmapNode[K]) {
@@ -659,6 +776,65 @@ export function RoadmapEditor({
     )
   }
 
+  function sameDropTarget(first: DropTarget | null, second: DropTarget) {
+    if (!first || first.type !== second.type) return false
+    if (first.type === 'root') return true
+    if (first.type === 'child' && second.type === 'child') return first.parentId === second.parentId
+    if (first.type === 'sibling' && second.type === 'sibling') {
+      return first.parentId === second.parentId && first.index === second.index
+    }
+    return false
+  }
+
+  function renderDropZone(target: DropTarget, label: string) {
+    const active = sameDropTarget(dropTarget, target)
+    return (
+      <div
+        className={`canvas-drop-zone ${active ? 'active' : ''}`}
+        onDragLeave={() => setDropTarget(null)}
+        onDragOver={(event) => activateDropTarget(event, target)}
+        onDrop={(event) => handleDrop(event, target)}
+      >
+        {label}
+      </div>
+    )
+  }
+
+  function renderCanvasNode(item: CanvasNode) {
+    const { node, parentId, index, x, y } = item
+    const progress = nodeProgress(node)
+    return (
+      <div
+        className={`canvas-card ${selectedId === node.id ? 'selected' : ''} ${draggedId === node.id ? 'dragging' : ''}`}
+        draggable
+        key={`${parentId}-${index}-${node.id}`}
+        onClick={() => selectNode(node)}
+        onDragEnd={() => {
+          setDraggedId(null)
+          setDropTarget(null)
+        }}
+        onDragStart={(event) => handleDragStart(event, node)}
+        style={{ left: x, top: y } as CSSProperties}
+      >
+        {renderDropZone({ type: 'sibling', parentId, index }, 'Antes')}
+        <div
+          className={`canvas-card-main ${sameDropTarget(dropTarget, { type: 'child', parentId: node.id }) ? 'drop-child' : ''}`}
+          onDragOver={(event) => activateDropTarget(event, { type: 'child', parentId: node.id })}
+          onDrop={(event) => handleDrop(event, { type: 'child', parentId: node.id })}
+        >
+          <span className="canvas-grip" title="Arrastrar rama"><Icon name="grip" /></span>
+          <span className={`state-dot ${node.status}`} />
+          <div>
+            <strong>{node.id || 'sin-id'}</strong>
+            <span>{node.title || 'Nueva fase'}</span>
+          </div>
+          <span className="progress-chip">{progress}%</span>
+        </div>
+        {renderDropZone({ type: 'sibling', parentId, index: index + 1 }, 'Despues')}
+      </div>
+    )
+  }
+
   return (
     <main className="roadmap-screen">
       <header className="roadmap-bar no-print">
@@ -676,6 +852,10 @@ export function RoadmapEditor({
         </span>
         <span className={`sync-state ${syncStatus}`}>{syncLabel(syncStatus)}{syncError ? ` · ${syncError}` : ''}</span>
         <input aria-label="Buscar" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar" type="search" value={query} />
+        <div className="mode-switch" role="group" aria-label="Vista del editor">
+          <button className={editorMode === 'canvas' ? 'active' : ''} onClick={() => setEditorMode('canvas')} type="button"><Icon name="gitMerge" /> Canvas</button>
+          <button className={editorMode === 'outline' ? 'active' : ''} onClick={() => setEditorMode('outline')} type="button"><Icon name="fileBranch" /> Lista</button>
+        </div>
         <div className="toolbar-group">
           <button aria-label="Importar JSON" className="icon-only" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /></button>
           <button aria-label="Exportar proyecto" className="icon-only secondary-button" onClick={exportProject} title="Exportar proyecto" type="button"><Icon name="download" /></button>
@@ -690,7 +870,7 @@ export function RoadmapEditor({
 
       {errorMessage ? <p className="form-error no-print">{errorMessage}</p> : null}
 
-      <section className="roadmap-body">
+      <section className={`roadmap-body ${editorMode === 'canvas' ? 'visual-mode' : ''}`}>
         <aside className="file-tree no-print">
           <div className="tree-mini-actions">
             <button aria-label="Añadir raiz" className="icon-only" onClick={() => addNode('')} title="Añadir raiz" type="button"><Icon name="plus" /></button>
@@ -702,7 +882,70 @@ export function RoadmapEditor({
           </ul>
         </aside>
 
-        <section className="text-editor">
+        {editorMode === 'canvas' ? (
+          <section className="branch-canvas-panel no-print" aria-label="Editor visual de ramas">
+            <div className="canvas-toolbar">
+              <button onClick={() => addNode('')} type="button"><Icon name="plus" /> Raiz</button>
+              <button
+                className="secondary-button"
+                disabled={!selectedNode}
+                onClick={() => selectedNode && addNode(selectedNode.id)}
+                type="button"
+              >
+                <Icon name="plus" /> Hijo
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!selectedNode}
+                onClick={() => selectedNode && addNode(selectedFlatNode?.parentId ?? '', (selectedFlatNode?.index ?? 0) + 1)}
+                type="button"
+              >
+                <Icon name="plus" /> Hermano
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!selectedNode || document.nodes.length < 2}
+                onClick={mergeRootsIntoSelectedRoot}
+                type="button"
+              >
+                <Icon name="gitMerge" /> Unir raices
+              </button>
+            </div>
+            <div
+              className="canvas-root-drop"
+              onDragLeave={() => setDropTarget(null)}
+              onDragOver={(event) => activateDropTarget(event, { type: 'root' })}
+              onDrop={(event) => handleDrop(event, { type: 'root' })}
+            >
+              Soltar aqui para separar como raiz
+            </div>
+            <div className="branch-canvas-scroll">
+              <div className="branch-canvas" style={{ width: canvasWidth, height: canvasHeight }}>
+                <svg className="canvas-lines" height={canvasHeight} width={canvasWidth} aria-hidden="true">
+                  {canvasNodes.map((item) => {
+                    if (!item.parentId) return null
+                    const parent = canvasLookup.get(item.parentId)
+                    if (!parent) return null
+                    const startX = parent.x + canvasNodeWidth
+                    const startY = parent.y + canvasNodeHeight / 2
+                    const endX = item.x
+                    const endY = item.y + canvasNodeHeight / 2
+                    const midX = startX + (endX - startX) / 2
+                    return (
+                      <path
+                        d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
+                        key={`${item.parentId}-${item.node.id}`}
+                      />
+                    )
+                  })}
+                </svg>
+                {canvasNodes.map(renderCanvasNode)}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <section className={`text-editor ${editorMode === 'canvas' ? 'compact' : ''}`}>
           {selectedNode ? (
             <>
               <div className="selected-progress no-print">
