@@ -302,6 +302,14 @@ function replaceNodeWithNodes(nodes: RoadmapNode[], id: string, replacements: Ro
   })
 }
 
+function setBranchStatus(node: RoadmapNode, status: RoadmapNodeStatus): RoadmapNode {
+  return {
+    ...node,
+    status,
+    children: node.children.map((child) => setBranchStatus(child, status)),
+  }
+}
+
 function nodeMarkdown(node: RoadmapNode, depth = 1, includeChildren = false): string {
   const lines = [
     `${'#'.repeat(Math.min(depth, 6))} ${node.id} — ${node.title}`,
@@ -450,6 +458,18 @@ export function RoadmapEditor({
     if (selectedId !== null && (selectedId === node.id || branchIds(node).includes(selectedId))) {
       setSelectedId(null)
     }
+  }
+
+  function closeNode(node: RoadmapNode) {
+    emitNodes(updateNode(document.nodes, node.id, (current) => setBranchStatus(current, 'closed')))
+    setOpenMenuId(null)
+  }
+
+  async function copySelectedJson() {
+    if (!selectedNode) return
+    const nextNode = { ...selectedNode, status: 'in_progress' as RoadmapNodeStatus }
+    emitNodes(updateNode(document.nodes, selectedNode.id, () => nextNode))
+    await copyText(nodeJson(nextNode))
   }
 
   function exportProject() {
@@ -601,6 +621,16 @@ export function RoadmapEditor({
             <span>{node.title || 'Nueva fase'}</span>
           </button>
           <span className="progress-chip" title={`${progress}% completado`}>{progress}%</span>
+          <button
+            aria-label={`Cerrar ${node.title || node.id || 'fase'}`}
+            className="quick-close-button"
+            disabled={node.status === 'closed'}
+            onClick={() => closeNode(node)}
+            title="Cerrar"
+            type="button"
+          >
+            Cerrar
+          </button>
           <button className="copy-button" onClick={() => copyText(nodeMarkdown(node))} type="button">Copiar</button>
           <button className="menu-button" onClick={() => setOpenMenuId(openMenuId === node.id ? null : node.id)} type="button">···</button>
         </div>
@@ -700,7 +730,7 @@ export function RoadmapEditor({
                 </button>
                 <button className="secondary-button" onClick={() => openImport('append-to-selected')} type="button">Importar como subfases</button>
                 <button className="secondary-button" onClick={() => openImport('replace-selected')} type="button">Reemplazar esta rama</button>
-                <button className="secondary-button" onClick={() => copyText(nodeJson(selectedNode))} type="button">Copiar JSON</button>
+                <button className="secondary-button" onClick={copySelectedJson} type="button">Copiar JSON</button>
               </div>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onChange={(event) => updateSelected('id', event.target.value)} value={selectedNode.id} /></label>
