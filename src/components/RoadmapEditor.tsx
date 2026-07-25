@@ -5,6 +5,7 @@ import type {
   RoadmapNode,
   RoadmapNodeStatus,
 } from '../types/roadmap'
+import { Icon } from './Icon'
 
 type SyncStatus = 'local' | 'syncing' | 'synced' | 'error'
 
@@ -612,8 +613,8 @@ export function RoadmapEditor({
               else next.add(node.id)
               return next
             })
-          }} type="button">
-            {node.children.length === 0 ? '' : expanded ? '−' : '+'}
+          }} aria-label={expanded ? 'Contraer fase' : 'Expandir fase'} title={expanded ? 'Contraer' : 'Expandir'} type="button">
+            {node.children.length === 0 ? null : <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />}
           </button>
           <button className="file-name" onClick={() => selectNode(node)} type="button">
             <span className={`state-dot ${node.status}`} />
@@ -621,16 +622,20 @@ export function RoadmapEditor({
             <span>{node.title || 'Nueva fase'}</span>
           </button>
           <span className="progress-chip" title={`${progress}% completado`}>{progress}%</span>
-          <button className="copy-button" onClick={() => copyText(nodeMarkdown(node))} type="button">Copiar</button>
-          <button className="menu-button" onClick={() => setOpenMenuId(openMenuId === node.id ? null : node.id)} type="button">···</button>
+          <button aria-label="Copiar fase" className="copy-button" onClick={() => copyText(nodeMarkdown(node))} title="Copiar fase" type="button">
+            <Icon name="copy" />
+          </button>
+          <button aria-label="Mas acciones" className="menu-button" onClick={() => setOpenMenuId(openMenuId === node.id ? null : node.id)} title="Mas acciones" type="button">
+            <Icon name="more" />
+          </button>
         </div>
         {openMenuId === node.id ? (
           <div className="node-menu">
-            <button onClick={() => addNode(node.id)} type="button">Añadir hijo</button>
-            <button onClick={() => addNode(parentId, index + 1)} type="button">Añadir hermano</button>
-            <button onClick={() => duplicateNode(node, parentId, index)} type="button">Duplicar rama</button>
-            <button onClick={() => moveNode(node, parentId, index, -1)} type="button">Mover arriba</button>
-            <button onClick={() => moveNode(node, parentId, index, 1)} type="button">Mover abajo</button>
+            <button onClick={() => addNode(node.id)} type="button"><Icon name="plus" /> Hijo</button>
+            <button onClick={() => addNode(parentId, index + 1)} type="button"><Icon name="plus" /> Hermano</button>
+            <button onClick={() => duplicateNode(node, parentId, index)} type="button"><Icon name="copy" /> Duplicar rama</button>
+            <button onClick={() => moveNode(node, parentId, index, -1)} type="button"><Icon name="chevronUp" /> Mover arriba</button>
+            <button onClick={() => moveNode(node, parentId, index, 1)} type="button"><Icon name="chevronDown" /> Mover abajo</button>
             <label>
               Cambiar padre
               <select onChange={(event) => changeParent(node, event.target.value)} value={parentId}>
@@ -640,9 +645,9 @@ export function RoadmapEditor({
                 ))}
               </select>
             </label>
-            <button onClick={() => copyText(nodeMarkdown(node))} type="button">Copiar fase</button>
-            <button onClick={() => copyText(nodeMarkdown(node, 1, true))} type="button">Copiar rama</button>
-            <button className="text-danger" onClick={() => deleteNode(node)} type="button">Eliminar</button>
+            <button onClick={() => copyText(nodeMarkdown(node))} type="button"><Icon name="copy" /> Copiar fase</button>
+            <button onClick={() => copyText(nodeMarkdown(node, 1, true))} type="button"><Icon name="fileBranch" /> Copiar rama</button>
+            <button className="text-danger" onClick={() => deleteNode(node)} type="button"><Icon name="trash" /> Eliminar</button>
           </div>
         ) : null}
         {expanded && node.children.length > 0 ? (
@@ -672,14 +677,14 @@ export function RoadmapEditor({
         <span className={`sync-state ${syncStatus}`}>{syncLabel(syncStatus)}{syncError ? ` · ${syncError}` : ''}</span>
         <input aria-label="Buscar" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar" type="search" value={query} />
         <div className="toolbar-group">
-          <button onClick={() => openImport('replace-project')} type="button">Importar</button>
-          <button className="secondary-button" onClick={exportProject} type="button">Exportar</button>
-          <button className="secondary-button" onClick={exportBranch} type="button">Rama</button>
-          <button className="secondary-button" onClick={() => setShowPrint(true)} type="button">Imprimir</button>
+          <button aria-label="Importar JSON" className="icon-only" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /></button>
+          <button aria-label="Exportar proyecto" className="icon-only secondary-button" onClick={exportProject} title="Exportar proyecto" type="button"><Icon name="download" /></button>
+          <button aria-label="Exportar rama" className="icon-only secondary-button" onClick={exportBranch} title="Exportar rama" type="button"><Icon name="fileBranch" /></button>
+          <button aria-label="Imprimir" className="icon-only secondary-button" onClick={() => setShowPrint(true)} title="Imprimir" type="button"><Icon name="printer" /></button>
         </div>
         <div className="toolbar-group">
-          <button className="secondary-button" onClick={onBack} type="button">Proyectos</button>
-          <button className="secondary-button" onClick={onSignOut} type="button">Salir</button>
+          <button aria-label="Volver a proyectos" className="icon-only secondary-button" onClick={onBack} title="Proyectos" type="button"><Icon name="folderOpen" /></button>
+          <button aria-label="Cerrar sesion" className="icon-only secondary-button" onClick={onSignOut} title="Cerrar sesion" type="button"><Icon name="logOut" /></button>
         </div>
       </header>
 
@@ -688,9 +693,9 @@ export function RoadmapEditor({
       <section className="roadmap-body">
         <aside className="file-tree no-print">
           <div className="tree-mini-actions">
-            <button onClick={() => addNode('')} type="button">Añadir raíz</button>
-            <button onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} type="button">Expandir todo</button>
-            <button onClick={() => setExpandedIds(new Set())} type="button">Contraer todo</button>
+            <button aria-label="Añadir raiz" className="icon-only" onClick={() => addNode('')} title="Añadir raiz" type="button"><Icon name="plus" /></button>
+            <button aria-label="Expandir todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} title="Expandir todo" type="button"><Icon name="maximize" /></button>
+            <button aria-label="Contraer todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set())} title="Contraer todo" type="button"><Icon name="minimize" /></button>
           </div>
           <ul className="file-tree-list root">
             {document.nodes.map((node, index) => renderNode(node, 0, '', index))}
@@ -710,18 +715,18 @@ export function RoadmapEditor({
                 </div>
               </div>
               <div className="editor-actions no-print">
-                <button onClick={() => addNode(selectedNode.id)} type="button">Añadir subfase</button>
+                <button onClick={() => addNode(selectedNode.id)} type="button"><Icon name="plus" /> Subfase</button>
                 <button
                   className="secondary-button"
                   onClick={() => addNode(selectedFlatNode?.parentId ?? '', (selectedFlatNode?.index ?? 0) + 1)}
                   type="button"
                 >
-                  Añadir hermana
+                  <Icon name="plus" /> Hermana
                 </button>
-                <button className="secondary-button" onClick={() => openImport('append-to-selected')} type="button">Importar como subfases</button>
-                <button className="secondary-button" onClick={() => openImport('replace-selected')} type="button">Reemplazar esta rama</button>
-                <button className="secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} type="button">Cerrar</button>
-                <button className="secondary-button" onClick={copySelectedJson} type="button">Copiar JSON</button>
+                <button aria-label="Importar como subfases" className="icon-only secondary-button" onClick={() => openImport('append-to-selected')} title="Importar como subfases" type="button"><Icon name="upload" /></button>
+                <button aria-label="Reemplazar esta rama" className="icon-only secondary-button" onClick={() => openImport('replace-selected')} title="Reemplazar esta rama" type="button"><Icon name="import" /></button>
+                <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase" type="button"><Icon name="check" /></button>
+                <button aria-label="Copiar JSON" className="icon-only secondary-button" onClick={copySelectedJson} title="Copiar JSON" type="button"><Icon name="copy" /></button>
               </div>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onChange={(event) => updateSelected('id', event.target.value)} value={selectedNode.id} /></label>

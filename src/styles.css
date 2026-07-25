@@ -38,12 +38,16 @@ textarea {
 }
 
 button {
+  align-items: center;
   border: 0;
   border-radius: 8px;
   background: var(--brand);
   color: #ffffff;
   cursor: pointer;
+  display: inline-flex;
+  gap: 0.45rem;
   font-weight: 700;
+  justify-content: center;
   padding: 0.78rem 1rem;
 }
 
@@ -54,6 +58,23 @@ button:hover {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.icon {
+  flex: 0 0 auto;
+  height: 1.05rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 1.05rem;
+}
+
+.icon-only {
+  aspect-ratio: 1;
+  min-height: 38px;
+  padding: 0;
+  width: 38px;
 }
 
 input,
@@ -227,6 +248,10 @@ h2 {
   margin-top: 0.2rem;
 }
 
+.section-heading > div:first-child {
+  margin-right: auto;
+}
+
 .project-list {
   display: grid;
   gap: 0.75rem;
@@ -280,7 +305,6 @@ h2 {
 .text-danger {
   background: var(--danger-soft);
   color: var(--danger);
-  padding: 0.55rem 0.75rem;
 }
 
 .text-danger:hover {
@@ -393,6 +417,10 @@ h2 {
   background: var(--panel-soft);
   color: var(--brand-strong);
   padding: 0.55rem 0.75rem;
+}
+
+.secondary-button.icon-only {
+  padding: 0;
 }
 
 .secondary-button:hover {
@@ -759,7 +787,7 @@ h2 {
 
 .projects-screen .project-list li {
   align-items: center;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .roadmap-screen {
@@ -787,8 +815,12 @@ h2 {
 
 .roadmap-bar button {
   min-height: 36px;
-  padding: 0.5rem 0.7rem;
   white-space: nowrap;
+}
+
+.roadmap-bar .icon-only {
+  min-height: 36px;
+  width: 36px;
 }
 
 .roadmap-title {
@@ -905,7 +937,7 @@ h2 {
   border-radius: 6px;
   display: grid;
   gap: 0.25rem;
-  grid-template-columns: 12px 22px minmax(0, 1fr) 50px 32px;
+  grid-template-columns: 12px 22px minmax(0, 1fr) 50px 30px 30px;
   min-height: 34px;
   padding: 0.12rem 0.2rem 0.12rem calc(0.2rem + var(--depth, 0) * 1rem);
 }
@@ -929,6 +961,11 @@ h2 {
   justify-content: center;
   padding: 0;
   width: 22px;
+}
+
+.tree-toggle .icon {
+  height: 0.95rem;
+  width: 0.95rem;
 }
 
 .tree-toggle:hover {
@@ -1001,6 +1038,7 @@ h2 {
 .menu-button {
   background: transparent;
   color: var(--muted);
+  display: inline-flex;
   height: 30px;
   padding: 0;
 }
@@ -1011,13 +1049,18 @@ h2 {
 }
 
 .copy-button {
-  display: none;
+  opacity: 0;
 }
 
 .copy-button:hover,
 .menu-button:hover {
   background: #edf5ef;
   color: var(--text);
+}
+
+.file-row:hover .copy-button,
+.file-row:focus-within .copy-button {
+  opacity: 1;
 }
 
 .node-menu {
@@ -1036,9 +1079,17 @@ h2 {
 
 .node-menu button,
 .node-menu label {
+  align-items: center;
   background: transparent;
   color: var(--text);
+  display: flex;
+  gap: 0.55rem;
   text-align: left;
+}
+
+.node-menu label {
+  align-items: stretch;
+  display: grid;
 }
 
 .node-menu button:hover {
@@ -1111,6 +1162,11 @@ h2 {
   border-radius: 6px;
   min-height: 34px;
   padding: 0.45rem 0.65rem;
+}
+
+.editor-actions .icon-only {
+  padding: 0;
+  width: 34px;
 }
 
 .editor-fields {

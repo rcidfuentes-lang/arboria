@@ -6,6 +6,7 @@ import {
   parseRoadmapJson,
   stringifyRoadmapJson,
 } from './RoadmapEditor'
+import { Icon } from './Icon'
 import { supabase } from '../lib/supabase'
 import type { RoadmapDocument, RoadmapProject } from '../types/roadmap'
 
@@ -328,8 +329,8 @@ export function ProjectList({ session }: ProjectListProps) {
 
         <div className="account-actions">
           <span>{session.user.email}</span>
-          <button type="button" onClick={() => supabaseClient.auth.signOut()}>
-            Cerrar sesion
+          <button aria-label="Cerrar sesion" className="icon-only" title="Cerrar sesion" type="button" onClick={() => supabaseClient.auth.signOut()}>
+            <Icon name="logOut" />
           </button>
         </div>
       </header>
@@ -342,18 +343,23 @@ export function ProjectList({ session }: ProjectListProps) {
               <p>{projects.length} guardados</p>
             </div>
             <button
+              aria-label={isCreating ? 'Creando proyecto' : 'Nuevo proyecto'}
+              className="icon-only"
               disabled={isCreating}
               onClick={handleCreateProject}
+              title={isCreating ? 'Creando...' : 'Nuevo proyecto'}
               type="button"
             >
-              {isCreating ? 'Creando...' : 'Nuevo'}
+              <Icon name="plus" />
             </button>
             <button
-              className="secondary-button"
+              aria-label="Importar proyecto JSON"
+              className="icon-only secondary-button"
               onClick={() => setShowProjectImport(true)}
+              title="Importar proyecto JSON"
               type="button"
             >
-              Importar proyecto JSON
+              <Icon name="upload" />
             </button>
           </div>
 
@@ -374,31 +380,29 @@ export function ProjectList({ session }: ProjectListProps) {
                 <button
                   className={project.id === activeProjectId ? 'active' : ''}
                   onClick={() => handleOpenProject(project)}
+                  title="Abrir proyecto"
                   type="button"
                 >
                   <strong>{project.name}</strong>
                   <span>{formatDate(project.updated_at)}</span>
                 </button>
                 <button
-                  onClick={() => handleOpenProject(project)}
+                  aria-label={`Descargar JSON de ${project.name}`}
+                  className="icon-only secondary-button"
+                  onClick={() => handleDownloadProject(project)}
+                  title="Descargar JSON"
                   type="button"
                 >
-                  Abrir
+                  <Icon name="download" />
                 </button>
                 <button
                   aria-label={`Eliminar ${project.name}`}
-                  className="text-danger"
+                  className="icon-only text-danger"
                   onClick={() => handleDeleteProject(project.id)}
+                  title="Eliminar"
                   type="button"
                 >
-                  Eliminar
-                </button>
-                <button
-                  className="secondary-button"
-                  onClick={() => handleDownloadProject(project)}
-                  type="button"
-                >
-                  Descargar JSON
+                  <Icon name="trash" />
                 </button>
               </li>
             ))}
