@@ -642,12 +642,16 @@ export function RoadmapEditor({
         </span>
         <span className={`sync-state ${syncStatus}`}>{syncLabel(syncStatus)}{syncError ? ` · ${syncError}` : ''}</span>
         <input aria-label="Buscar" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar" type="search" value={query} />
-        <button onClick={() => openImport('replace-project')} type="button">Importar</button>
-        <button onClick={exportProject} type="button">Exportar JSON</button>
-        <button onClick={exportBranch} type="button">Exportar rama</button>
-        <button onClick={() => setShowPrint(true)} type="button">Imprimir</button>
-        <button className="secondary-button" onClick={onBack} type="button">Volver a proyectos</button>
-        <button className="secondary-button" onClick={onSignOut} type="button">Cerrar sesión</button>
+        <div className="toolbar-group">
+          <button onClick={() => openImport('replace-project')} type="button">Importar</button>
+          <button className="secondary-button" onClick={exportProject} type="button">Exportar</button>
+          <button className="secondary-button" onClick={exportBranch} type="button">Rama</button>
+          <button className="secondary-button" onClick={() => setShowPrint(true)} type="button">Imprimir</button>
+        </div>
+        <div className="toolbar-group">
+          <button className="secondary-button" onClick={onBack} type="button">Proyectos</button>
+          <button className="secondary-button" onClick={onSignOut} type="button">Salir</button>
+        </div>
       </header>
 
       {errorMessage ? <p className="form-error no-print">{errorMessage}</p> : null}
