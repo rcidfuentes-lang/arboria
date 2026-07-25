@@ -244,8 +244,8 @@ function flatten(nodes: RoadmapNode[]) {
   return result
 }
 
-function layoutCanvasNodes(nodes: RoadmapNode[]) {
-  return flatten(nodes).map((item, order): CanvasNode => ({
+function layoutCanvasNodes(nodes: FlatNode[]) {
+  return nodes.map((item, order): CanvasNode => ({
     ...item,
     x: item.depth * canvasColumnGap,
     y: order * canvasRowGap,
@@ -263,6 +263,10 @@ function findNode(nodes: RoadmapNode[], id: string): RoadmapNode | null {
 
 function contains(node: RoadmapNode, id: string): boolean {
   return node.id === id || node.children.some((child) => contains(child, id))
+}
+
+function countDescendants(node: RoadmapNode): number {
+  return node.children.reduce((total, child) => total + 1 + countDescendants(child), 0)
 }
 
 function updateNode(nodes: RoadmapNode[], id: string, updater: (node: RoadmapNode) => RoadmapNode): RoadmapNode[] {
@@ -472,7 +476,25 @@ export function RoadmapEditor({
     const totalProgress = document.nodes.reduce((total, node) => total + nodeProgress(node), 0)
     return Math.round(totalProgress / document.nodes.length)
   }, [document.nodes])
-  const canvasNodes = useMemo(() => layoutCanvasNodes(document.nodes), [document.nodes])
+  const visibleIds = useMemo(() => {
+    const text = query.trim().toLowerCase()
+    if (!text) return new Set(flatNodes.map(({ node }) => node.id))
+    const matches = flatNodes.filter(({ node }) =>
+      [node.id, node.title, node.content].join(' ').toLowerCase().includes(text),
+    )
+    const ids = new Set<string>()
+    matches.forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
+    return ids
+  }, [flatNodes, query])
+  const navigationNodes = useMemo(() => {
+    const isSearching = query.trim().length > 0
+    return flatNodes.filter(({ node, path }) => {
+      if (!visibleIds.has(node.id)) return false
+      if (isSearching) return true
+      return path.slice(0, -1).every((ancestor) => expandedIds.has(ancestor.id))
+    })
+  }, [expandedIds, flatNodes, query, visibleIds])
+  const canvasNodes = useMemo(() => layoutCanvasNodes(navigationNodes), [navigationNodes])
   const canvasLookup = useMemo(
     () => new Map(canvasNodes.map((item) => [item.node.id, item])),
     [canvasNodes],
@@ -498,6 +520,16 @@ export function RoadmapEditor({
   function selectNode(node: RoadmapNode) {
     setSelectedId(node.id)
     setOpenMenuId(null)
+  }
+
+  function toggleNodeExpansion(node: RoadmapNode) {
+    if (node.children.length === 0) return
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (next.has(node.id)) next.delete(node.id)
+      else next.add(node.id)
+      return next
+    })
   }
 
   function addNode(parentId: string, index?: number) {
@@ -754,17 +786,6 @@ export function RoadmapEditor({
     window.setTimeout(() => window.print(), 50)
   }
 
-  const visibleIds = useMemo(() => {
-    const text = query.trim().toLowerCase()
-    if (!text) return new Set(flatNodes.map(({ node }) => node.id))
-    const matches = flatNodes.filter(({ node }) =>
-      [node.id, node.title, node.content].join(' ').toLowerCase().includes(text),
-    )
-    const ids = new Set<string>()
-    matches.forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
-    return ids
-  }, [flatNodes, query])
-
   useEffect(() => {
     const text = query.trim().toLowerCase()
     if (!text) return
@@ -809,14 +830,7 @@ export function RoadmapEditor({
       >
         <div className={`file-row ${selectedId === node.id ? 'selected' : ''}`} style={{ '--depth': depth } as CSSProperties}>
           <span className="tree-line" aria-hidden="true" />
-          <button className="tree-toggle" disabled={node.children.length === 0} onClick={() => {
-            setExpandedIds((current) => {
-              const next = new Set(current)
-              if (next.has(node.id)) next.delete(node.id)
-              else next.add(node.id)
-              return next
-            })
-          }} aria-label={expanded ? 'Contraer fase' : 'Expandir fase'} title={expanded ? 'Contraer' : 'Expandir'} type="button">
+          <button className="tree-toggle" disabled={node.children.length === 0} onClick={() => toggleNodeExpansion(node)} aria-label={expanded ? 'Contraer fase' : 'Expandir fase'} title={expanded ? 'Contraer' : 'Expandir'} type="button">
             {node.children.length === 0 ? null : <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />}
           </button>
           <button className="file-name" onClick={() => selectNode(node)} type="button">
@@ -888,6 +902,9 @@ export function RoadmapEditor({
 
   function renderCanvasNode(item: CanvasNode) {
     const { node, parentId, index, x, y } = item
+    const expanded = expandedIds.has(node.id)
+    const isSearching = query.trim().length > 0
+    const hiddenDescendants = !expanded && !isSearching ? countDescendants(node) : 0
     const progress = nodeProgress(node)
     return (
       <div
@@ -909,12 +926,28 @@ export function RoadmapEditor({
           onDrop={(event) => handleDrop(event, { type: 'child', parentId: node.id })}
         >
           <span className="canvas-grip" title="Arrastrar rama"><Icon name="grip" /></span>
+          <button
+            aria-label={expanded ? 'Contraer rama' : 'Expandir rama'}
+            className="canvas-toggle"
+            disabled={node.children.length === 0}
+            onClick={(event) => {
+              event.stopPropagation()
+              toggleNodeExpansion(node)
+            }}
+            title={expanded ? 'Contraer rama' : 'Expandir rama'}
+            type="button"
+          >
+            {node.children.length === 0 ? null : <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />}
+          </button>
           <span className={`state-dot ${node.status}`} />
           <div>
             <strong>{node.id || 'sin-id'}</strong>
             <span>{node.title || 'Nueva fase'}</span>
           </div>
-          <span className="progress-chip">{progress}%</span>
+          <span className="canvas-card-meta">
+            {hiddenDescendants > 0 ? <span className="hidden-count">+{hiddenDescendants}</span> : null}
+            <span className="progress-chip">{progress}%</span>
+          </span>
         </div>
         {renderDropZone({ type: 'sibling', parentId, index: index + 1 }, 'Despues')}
       </div>
