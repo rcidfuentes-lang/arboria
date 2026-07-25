@@ -4,12 +4,14 @@ import type {
   RoadmapDocument,
   RoadmapNode,
   RoadmapNodeStatus,
+  RoadmapProject,
 } from '../types/roadmap'
 import { Icon } from './Icon'
 
 type SyncStatus = 'local' | 'syncing' | 'synced' | 'error'
 
 type RoadmapEditorProps = {
+  availableProjects: RoadmapProject[]
   document: RoadmapDocument
   syncError: string
   syncStatus: SyncStatus
@@ -27,7 +29,8 @@ type FlatNode = {
 }
 
 type ImportMode = 'replace-project' | 'append-to-selected' | 'replace-selected'
-type EditorMode = 'outline' | 'canvas'
+type EditorMode = 'editor' | 'canvas'
+type ProjectMergeMode = 'append-root' | 'append-to-selected'
 type DropTarget =
   | { type: 'root' }
   | { type: 'child'; parentId: string }
@@ -304,6 +307,40 @@ function cloneBranch(node: RoadmapNode): RoadmapNode {
   return clone(node)
 }
 
+function cloneNodesWithUniqueIds(nodes: RoadmapNode[], existingIds: Set<string>, prefix: string) {
+  const suffix = Date.now().toString(36)
+  const normalizePart = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+
+  const nextId = (id: string, fallback: string) => {
+    const base = normalizePart(id || fallback) || 'fase'
+    let candidate = base
+    if (existingIds.has(candidate)) candidate = `${normalizePart(prefix) || 'proyecto'}-${base}`
+    if (existingIds.has(candidate)) candidate = `${candidate}-${suffix}`
+    let index = 2
+    while (existingIds.has(candidate)) {
+      candidate = `${normalizePart(prefix) || 'proyecto'}-${base}-${suffix}-${index}`
+      index += 1
+    }
+    existingIds.add(candidate)
+    return candidate
+  }
+
+  const clone = (node: RoadmapNode, index: number): RoadmapNode => ({
+    ...node,
+    id: nextId(node.id, `fase-${index + 1}`),
+    children: node.children.map(clone),
+  })
+
+  return nodes.map(clone)
+}
+
 function branchIds(node: RoadmapNode): string[] {
   return [node.id, ...node.children.flatMap(branchIds)]
 }
@@ -396,6 +433,7 @@ async function copyText(text: string) {
 }
 
 export function RoadmapEditor({
+  availableProjects,
   document,
   onBack,
   onChange,
@@ -412,9 +450,12 @@ export function RoadmapEditor({
   const [importText, setImportText] = useState('')
   const [showPrint, setShowPrint] = useState(false)
   const [printScope, setPrintScope] = useState<'selected' | 'branch' | 'all'>('all')
+  const [showProjectMerge, setShowProjectMerge] = useState(false)
+  const [mergeProjectId, setMergeProjectId] = useState('')
+  const [projectMergeMode, setProjectMergeMode] = useState<ProjectMergeMode>('append-root')
   const [errorMessage, setErrorMessage] = useState('')
   const [focusIdNonce, setFocusIdNonce] = useState(0)
-  const [editorMode, setEditorMode] = useState<EditorMode>('canvas')
+  const [editorMode, setEditorMode] = useState<EditorMode>('editor')
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const idInputRef = useRef<HTMLInputElement>(null)
@@ -561,6 +602,51 @@ export function RoadmapEditor({
       )
     emitNodes(nextNodes)
     setExpandedIds((current) => new Set([...current, selectedNode.id]))
+  }
+
+  function openProjectMerge() {
+    setMergeProjectId(availableProjects[0]?.id ?? '')
+    setProjectMergeMode('append-root')
+    setErrorMessage('')
+    setShowProjectMerge(true)
+  }
+
+  function mergeProject() {
+    const project = availableProjects.find((item) => item.id === mergeProjectId)
+    if (!project) {
+      setErrorMessage('Elige un proyecto para unir.')
+      return
+    }
+
+    if (projectMergeMode === 'append-to-selected' && !selectedNode) {
+      setErrorMessage('Selecciona una fase antes de meter el proyecto como subfases.')
+      return
+    }
+
+    const sourceDocument = normalizeRoadmapDocument(project.document)
+    const sourceNodes = applyAutomaticStatuses(sourceDocument.nodes)
+    if (sourceNodes.length === 0) {
+      setErrorMessage('Ese proyecto no tiene fases para unir.')
+      return
+    }
+
+    const importedNodes = cloneNodesWithUniqueIds(sourceNodes, collectNodeIds(document.nodes), project.slug || project.name)
+
+    if (projectMergeMode === 'append-to-selected' && selectedNode) {
+      emitNodes(updateNode(document.nodes, selectedNode.id, (node) => ({
+        ...node,
+        children: [...node.children, ...importedNodes],
+      })))
+      setExpandedIds((current) => new Set([...current, selectedNode.id]))
+      setSelectedId(importedNodes[0]?.id ?? selectedNode.id)
+    } else {
+      emitNodes([...document.nodes, ...importedNodes])
+      setSelectedId(importedNodes[0]?.id ?? selectedId)
+    }
+
+    setShowProjectMerge(false)
+    setMergeProjectId('')
+    setErrorMessage('')
   }
 
   function updateSelected<K extends keyof RoadmapNode>(key: K, value: RoadmapNode[K]) {
@@ -853,10 +939,11 @@ export function RoadmapEditor({
         <span className={`sync-state ${syncStatus}`}>{syncLabel(syncStatus)}{syncError ? ` · ${syncError}` : ''}</span>
         <input aria-label="Buscar" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar" type="search" value={query} />
         <div className="mode-switch" role="group" aria-label="Vista del editor">
-          <button className={editorMode === 'canvas' ? 'active' : ''} onClick={() => setEditorMode('canvas')} type="button"><Icon name="gitMerge" /> Canvas</button>
-          <button className={editorMode === 'outline' ? 'active' : ''} onClick={() => setEditorMode('outline')} type="button"><Icon name="fileBranch" /> Lista</button>
+          <button className={editorMode === 'editor' ? 'active' : ''} onClick={() => setEditorMode('editor')} type="button"><Icon name="fileBranch" /> Editar</button>
+          <button className={editorMode === 'canvas' ? 'active' : ''} onClick={() => setEditorMode('canvas')} type="button"><Icon name="gitMerge" /> Esquema</button>
         </div>
         <div className="toolbar-group">
+          <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
           <button aria-label="Importar JSON" className="icon-only" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /></button>
           <button aria-label="Exportar proyecto" className="icon-only secondary-button" onClick={exportProject} title="Exportar proyecto" type="button"><Icon name="download" /></button>
           <button aria-label="Exportar rama" className="icon-only secondary-button" onClick={exportBranch} title="Exportar rama" type="button"><Icon name="fileBranch" /></button>
@@ -870,21 +957,10 @@ export function RoadmapEditor({
 
       {errorMessage ? <p className="form-error no-print">{errorMessage}</p> : null}
 
-      <section className={`roadmap-body ${editorMode === 'canvas' ? 'visual-mode' : ''}`}>
-        <aside className="file-tree no-print">
-          <div className="tree-mini-actions">
-            <button aria-label="Añadir raiz" className="icon-only" onClick={() => addNode('')} title="Añadir raiz" type="button"><Icon name="plus" /></button>
-            <button aria-label="Expandir todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} title="Expandir todo" type="button"><Icon name="maximize" /></button>
-            <button aria-label="Contraer todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set())} title="Contraer todo" type="button"><Icon name="minimize" /></button>
-          </div>
-          <ul className="file-tree-list root">
-            {document.nodes.map((node, index) => renderNode(node, 0, '', index))}
-          </ul>
-        </aside>
-
-        {editorMode === 'canvas' ? (
-          <section className="branch-canvas-panel no-print" aria-label="Editor visual de ramas">
+      {editorMode === 'canvas' ? (
+        <section className="branch-canvas-panel full-screen no-print" aria-label="Editor visual de ramas">
             <div className="canvas-toolbar">
+              <button className="secondary-button" onClick={() => setEditorMode('editor')} type="button"><Icon name="arrowLeft" /> Editar</button>
               <button onClick={() => addNode('')} type="button"><Icon name="plus" /> Raiz</button>
               <button
                 className="secondary-button"
@@ -909,6 +985,14 @@ export function RoadmapEditor({
                 type="button"
               >
                 <Icon name="gitMerge" /> Unir raices
+              </button>
+              <button
+                className="secondary-button"
+                disabled={availableProjects.length === 0}
+                onClick={openProjectMerge}
+                type="button"
+              >
+                <Icon name="gitMerge" /> Unir proyecto
               </button>
             </div>
             <div
@@ -943,9 +1027,21 @@ export function RoadmapEditor({
               </div>
             </div>
           </section>
-        ) : null}
+      ) : (
+        <section className="roadmap-body">
+          <aside className="file-tree no-print">
+            <div className="tree-mini-actions">
+              <button aria-label="Añadir raiz" className="icon-only" onClick={() => addNode('')} title="Añadir raiz" type="button"><Icon name="plus" /></button>
+              <button aria-label="Expandir todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} title="Expandir todo" type="button"><Icon name="maximize" /></button>
+              <button aria-label="Contraer todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set())} title="Contraer todo" type="button"><Icon name="minimize" /></button>
+              <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
+            </div>
+            <ul className="file-tree-list root">
+              {document.nodes.map((node, index) => renderNode(node, 0, '', index))}
+            </ul>
+          </aside>
 
-        <section className={`text-editor ${editorMode === 'canvas' ? 'compact' : ''}`}>
+          <section className="text-editor">
           {selectedNode ? (
             <>
               <div className="selected-progress no-print">
@@ -968,6 +1064,7 @@ export function RoadmapEditor({
                 </button>
                 <button aria-label="Importar como subfases" className="icon-only secondary-button" onClick={() => openImport('append-to-selected')} title="Importar como subfases" type="button"><Icon name="upload" /></button>
                 <button aria-label="Reemplazar esta rama" className="icon-only secondary-button" onClick={() => openImport('replace-selected')} title="Reemplazar esta rama" type="button"><Icon name="import" /></button>
+                <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
                 <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase" type="button"><Icon name="check" /></button>
                 <button aria-label="Copiar JSON" className="icon-only secondary-button" onClick={copySelectedJson} title="Copiar JSON" type="button"><Icon name="copy" /></button>
               </div>
@@ -987,8 +1084,9 @@ export function RoadmapEditor({
           ) : (
             <p className="empty-state">Selecciona o crea una fase.</p>
           )}
+          </section>
         </section>
-      </section>
+      )}
 
       {showImport ? (
         <div className="modal-backdrop no-print">
@@ -1045,6 +1143,50 @@ export function RoadmapEditor({
             <button onClick={() => printRoadmap('branch')} type="button">Rama seleccionada</button>
             <button onClick={() => printRoadmap('all')} type="button">Roadmap completo</button>
             <button className="secondary-button" onClick={() => setShowPrint(false)} type="button">Cancelar</button>
+          </section>
+        </div>
+      ) : null}
+
+      {showProjectMerge ? (
+        <div className="modal-backdrop no-print">
+          <section className="modal compact">
+            <h2>Unir proyecto</h2>
+            <label className="field-label">
+              Proyecto
+              <select onChange={(event) => setMergeProjectId(event.target.value)} value={mergeProjectId}>
+                {availableProjects.map((project) => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="import-modes" role="group" aria-label="Destino del proyecto">
+              <label>
+                <input
+                  checked={projectMergeMode === 'append-root'}
+                  name="project-merge-mode"
+                  onChange={() => setProjectMergeMode('append-root')}
+                  type="radio"
+                />
+                Sumar como raices nuevas
+              </label>
+              <label>
+                <input
+                  checked={projectMergeMode === 'append-to-selected'}
+                  disabled={!selectedNode}
+                  name="project-merge-mode"
+                  onChange={() => setProjectMergeMode('append-to-selected')}
+                  type="radio"
+                />
+                Meter como subfases de la fase seleccionada
+              </label>
+            </div>
+            {selectedNode ? (
+              <p className="modal-hint">Seleccionada: {selectedNode.id || 'sin-id'} — {selectedNode.title || 'Nueva fase'}</p>
+            ) : null}
+            <div className="modal-actions">
+              <button disabled={!mergeProjectId} onClick={mergeProject} type="button">Unir</button>
+              <button className="secondary-button" onClick={() => setShowProjectMerge(false)} type="button">Cancelar</button>
+            </div>
           </section>
         </div>
       ) : null}

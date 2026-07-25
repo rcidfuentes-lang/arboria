@@ -222,6 +222,13 @@ export function ProjectList({ session }: ProjectListProps) {
     setSyncStatus(cachedDocument ? 'local' : 'synced')
   }
 
+  function documentForProject(project: RoadmapProject) {
+    const cachedDocument = localStorage.getItem(localStorageKey(project.id))
+    return cachedDocument
+      ? normalizeRoadmapDocument(JSON.parse(cachedDocument))
+      : normalizeDocument(project.document, project)
+  }
+
   function handleDocumentChange(nextDocument: RoadmapDocument) {
     if (!activeProject) return
 
@@ -306,6 +313,9 @@ export function ProjectList({ session }: ProjectListProps) {
   if (activeProject) {
     return (
       <RoadmapEditor
+        availableProjects={projects
+          .filter((project) => project.id !== activeProject.id)
+          .map((project) => ({ ...project, document: documentForProject(project) }))}
         document={normalizeDocument(activeProject.document, activeProject)}
         onBack={() => setActiveProjectId(null)}
         onChange={handleDocumentChange}

@@ -914,10 +914,6 @@ h2 {
   min-height: 0;
 }
 
-.roadmap-body.visual-mode {
-  grid-template-columns: minmax(240px, 22%) minmax(0, 1fr) minmax(320px, 34%);
-}
-
 .file-tree {
   background: #fbfdfb;
   border-right: 1px solid var(--border);
@@ -1130,12 +1126,15 @@ h2 {
 
 .branch-canvas-panel {
   background: #f8fbf8;
-  border-right: 1px solid var(--border);
   display: grid;
   grid-template-rows: auto auto 1fr;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.branch-canvas-panel.full-screen {
+  height: 100%;
 }
 
 .canvas-toolbar {
@@ -1275,8 +1274,11 @@ h2 {
   padding: 0.9rem 1rem 1rem;
 }
 
-.text-editor.compact {
-  background: #fbfdfb;
+.field-label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.85rem;
+  font-weight: 800;
 }
 
 .selected-progress {
@@ -1457,17 +1459,7 @@ h2 {
     grid-template-rows: 42% 58%;
   }
 
-  .roadmap-body.visual-mode {
-    grid-template-columns: 1fr;
-    grid-template-rows: 28% 38% 34%;
-  }
-
   .file-tree {
-    border-bottom: 1px solid var(--border);
-    border-right: 0;
-  }
-
-  .branch-canvas-panel {
     border-bottom: 1px solid var(--border);
     border-right: 0;
   }
