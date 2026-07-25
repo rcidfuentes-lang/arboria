@@ -316,6 +316,15 @@ function nodeMarkdown(node: RoadmapNode, depth = 1, includeChildren = false): st
   return lines.join('\n')
 }
 
+function nodeJson(node: RoadmapNode): string {
+  return stringifyRoadmapJson({
+    id: node.id,
+    title: node.title,
+    status: node.status,
+    content: node.content,
+  })
+}
+
 function markdownToHtml(markdown: string) {
   return markdown
     .split('\n')
@@ -691,6 +700,7 @@ export function RoadmapEditor({
                 </button>
                 <button className="secondary-button" onClick={() => openImport('append-to-selected')} type="button">Importar como subfases</button>
                 <button className="secondary-button" onClick={() => openImport('replace-selected')} type="button">Reemplazar esta rama</button>
+                <button className="secondary-button" onClick={() => copyText(nodeJson(selectedNode))} type="button">Copiar JSON</button>
               </div>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onChange={(event) => updateSelected('id', event.target.value)} value={selectedNode.id} /></label>
