@@ -1329,7 +1329,7 @@ h2 {
 
 .text-editor {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   align-items: start;
   gap: 0.65rem;
   min-height: 0;
@@ -1399,6 +1399,36 @@ h2 {
 .editor-actions .icon-only {
   padding: 0;
   width: 34px;
+}
+
+.branch-help {
+  background: #fbfdfb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  display: grid;
+  gap: 0.25rem;
+  line-height: 1.4;
+  padding: 0.65rem 0.75rem;
+}
+
+.branch-help strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.branch-help span {
+  font-size: 0.86rem;
+}
+
+.branch-help code,
+.modal-hint code {
+  background: #edf5ef;
+  border: 1px solid #d2e1d6;
+  border-radius: 6px;
+  color: var(--brand-strong);
+  font-weight: 800;
+  padding: 0.08rem 0.28rem;
 }
 
 .editor-fields {
@@ -1628,7 +1658,9 @@ h2 {
   box-shadow: var(--shadow);
   display: grid;
   gap: 1rem;
+  max-height: min(92svh, 860px);
   max-width: 680px;
+  overflow: auto;
   padding: 1rem;
   width: min(100%, 680px);
 }
@@ -1639,6 +1671,39 @@ h2 {
 
 .modal textarea {
   min-height: 280px;
+}
+
+.json-example {
+  background: #fbfdfb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem;
+}
+
+.json-example summary {
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.json-example pre {
+  background: #f3f7f4;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+}
+
+.json-example button {
+  justify-self: start;
 }
 
 .import-modes {

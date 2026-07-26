@@ -75,6 +75,22 @@ const richTextActions: FormatAction[] = [
   { command: 'removeFormat', icon: 'eraser', label: 'Limpiar formato' },
 ]
 
+const branchJsonExample = stringifyRoadmapJson({
+  id: 'nueva-rama',
+  title: 'Nueva rama',
+  status: 'pending',
+  content: 'Notas o markdown de esta fase.',
+  children: [
+    {
+      id: 'nueva-rama-subfase',
+      title: 'Primera subfase',
+      status: 'planned',
+      content: '',
+      children: [],
+    },
+  ],
+})
+
 const allowedRichTextTags = new Set([
   'B',
   'BLOCKQUOTE',
@@ -293,6 +309,54 @@ export function parseRoadmapJson(value: string): {
   }
 }
 
+export function parseRoadmapImportJson(value: string, fallbackDocument: RoadmapDocument): {
+  document: RoadmapDocument | null
+  errors: string[]
+} {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    const documentLike = parsed && typeof parsed === 'object' ? parsed as Partial<RoadmapDocument> : null
+    const nodesSource =
+      Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(documentLike?.nodes)
+          ? documentLike.nodes
+          : documentLike && 'id' in documentLike
+            ? [documentLike]
+            : null
+
+    if (!nodesSource) {
+      return {
+        document: null,
+        errors: ['Pega un proyecto completo, un array de fases o una fase con children.'],
+      }
+    }
+
+    const errors: string[] = []
+    validateNodes(nodesSource, errors, new Set())
+    if (errors.length > 0) return { document: null, errors }
+
+    const project = documentLike?.project?.id && documentLike.project.name
+      ? documentLike.project
+      : fallbackDocument.project
+
+    return {
+      document: normalizeRoadmapDocument({
+        schemaVersion: 1,
+        project,
+        ideas: Array.isArray(documentLike?.ideas) ? documentLike.ideas : fallbackDocument.ideas,
+        nodes: nodesSource,
+      }),
+      errors: [],
+    }
+  } catch (error) {
+    return {
+      document: null,
+      errors: [error instanceof Error ? error.message : 'JSON invalido.'],
+    }
+  }
+}
+
 export function stringifyRoadmapJson(value: unknown) {
   return `${JSON.stringify(value, null, 2)}\n`
 }
@@ -486,6 +550,7 @@ function nodeJson(node: RoadmapNode): string {
     title: node.title,
     status: node.status,
     content: node.content,
+    children: node.children,
   })
 }
 
@@ -860,9 +925,7 @@ export function RoadmapEditor({
 
   async function copySelectedJson() {
     if (!selectedNode) return
-    const nextNode = { ...selectedNode, status: 'in_progress' as RoadmapNodeStatus }
-    emitNodes(updateNode(document.nodes, selectedNode.id, () => nextNode))
-    await copyText(nodeJson(nextNode))
+    await copyText(nodeJson(selectedNode))
   }
 
   function exportProject() {
@@ -887,7 +950,7 @@ export function RoadmapEditor({
   }
 
   function importJson() {
-    const result = parseRoadmapJson(importText)
+    const result = parseRoadmapImportJson(importText, document)
     if (!result.document) {
       setErrorMessage(result.errors.join(' '))
       return
@@ -1238,7 +1301,7 @@ export function RoadmapEditor({
         </div>
         <div className="toolbar-group">
           <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
-          <button aria-label="Importar JSON" className="icon-only" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /></button>
+          <button className="secondary-button" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /> Importar JSON</button>
           <button aria-label="Exportar proyecto" className="icon-only secondary-button" onClick={exportProject} title="Exportar proyecto" type="button"><Icon name="download" /></button>
           <button aria-label="Exportar rama" className="icon-only secondary-button" onClick={exportBranch} title="Exportar rama" type="button"><Icon name="fileBranch" /></button>
           <button aria-label="Imprimir" className="icon-only secondary-button" onClick={() => setShowPrint(true)} title="Imprimir" type="button"><Icon name="printer" /></button>
@@ -1327,7 +1390,7 @@ export function RoadmapEditor({
         <section className="roadmap-body">
           <aside className="file-tree no-print">
             <div className="tree-mini-actions">
-              <button aria-label="Añadir raiz" className="icon-only" onClick={() => addNode('')} title="Añadir raiz" type="button"><Icon name="plus" /></button>
+              <button onClick={() => addNode('')} title="Añadir fase raiz" type="button"><Icon name="plus" /> Raiz</button>
               <button aria-label="Expandir todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} title="Expandir todo" type="button"><Icon name="maximize" /></button>
               <button aria-label="Contraer todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set())} title="Contraer todo" type="button"><Icon name="minimize" /></button>
               <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
@@ -1358,12 +1421,16 @@ export function RoadmapEditor({
                 >
                   <Icon name="plus" /> Hermana
                 </button>
-                <button aria-label="Importar como subfases" className="icon-only secondary-button" onClick={() => openImport('append-to-selected')} title="Importar como subfases" type="button"><Icon name="upload" /></button>
-                <button aria-label="Reemplazar esta rama" className="icon-only secondary-button" onClick={() => openImport('replace-selected')} title="Reemplazar esta rama" type="button"><Icon name="import" /></button>
+                <button className="secondary-button" onClick={() => openImport('append-to-selected')} title="Importar como subfases" type="button"><Icon name="upload" /> Importar debajo</button>
+                <button className="secondary-button" onClick={() => openImport('replace-selected')} title="Reemplazar esta rama" type="button"><Icon name="import" /> Reemplazar rama</button>
                 <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
                 <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase" type="button"><Icon name="check" /></button>
-                <button aria-label="Copiar JSON" className="icon-only secondary-button" onClick={copySelectedJson} title="Copiar JSON" type="button"><Icon name="copy" /></button>
+                <button className="secondary-button" onClick={copySelectedJson} title="Copiar rama JSON" type="button"><Icon name="copy" /> Copiar JSON</button>
               </div>
+              <aside className="branch-help no-print">
+                <strong>{selectedNode.title || selectedNode.id || 'Fase seleccionada'}</strong>
+                <span>Una rama se crea anadiendo fases dentro de <code>children</code>. Usa <b>Subfase</b> para crearla a mano o <b>Importar debajo</b> para pegar JSON como hijos de esta fase.</span>
+              </aside>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onChange={(event) => updateSelected('id', event.target.value)} value={selectedNode.id} /></label>
                 <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>
@@ -1388,6 +1455,9 @@ export function RoadmapEditor({
         <div className="modal-backdrop no-print">
           <section className="modal">
             <h2>Importar JSON</h2>
+            <p className="modal-hint">
+              Para crear ramas con JSON, pega una fase con <code>children</code>. Tambien puedes pegar un array de fases o un proyecto completo.
+            </p>
             <div className="import-modes" role="group" aria-label="Modo de importación">
               <label>
                 <input
@@ -1422,6 +1492,11 @@ export function RoadmapEditor({
             {importMode !== 'replace-project' && selectedNode ? (
               <p className="modal-hint">Destino: {selectedNode.id || 'sin-id'} — {selectedNode.title || 'Nueva fase'}</p>
             ) : null}
+            <details className="json-example">
+              <summary>Ver ejemplo de rama JSON</summary>
+              <pre>{branchJsonExample}</pre>
+              <button className="secondary-button" onClick={() => setImportText(branchJsonExample)} type="button"><Icon name="copy" /> Usar ejemplo</button>
+            </details>
             <textarea aria-label="Pegar JSON" onChange={(event) => setImportText(event.target.value)} value={importText} />
             <div className="modal-actions">
               <button onClick={importJson} type="button">Importar</button>
