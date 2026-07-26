@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, DragEvent } from 'react'
+import type { CSSProperties, DragEvent, FormEvent, MouseEvent } from 'react'
 import type {
   RoadmapDocument,
   RoadmapNode,
@@ -41,6 +41,13 @@ type CanvasNode = FlatNode & {
   y: number
 }
 
+type FormatAction = {
+  command: string
+  icon: Parameters<typeof Icon>[0]['name']
+  label: string
+  value?: string
+}
+
 const canvasNodeWidth = 380
 const canvasNodeHeight = 126
 const canvasColumnGap = 470
@@ -55,6 +62,36 @@ const statusOptions: Array<{ label: string; value: RoadmapNodeStatus }> = [
 ]
 
 const allowedStatuses = new Set(statusOptions.map(({ value }) => value))
+
+const richTextActions: FormatAction[] = [
+  { command: 'bold', icon: 'bold', label: 'Negrita' },
+  { command: 'italic', icon: 'italic', label: 'Cursiva' },
+  { command: 'underline', icon: 'underline', label: 'Subrayado' },
+  { command: 'strikeThrough', icon: 'strikethrough', label: 'Tachado' },
+  { command: 'formatBlock', icon: 'quote', label: 'Cita', value: 'blockquote' },
+  { command: 'insertUnorderedList', icon: 'list', label: 'Lista' },
+  { command: 'insertOrderedList', icon: 'listOrdered', label: 'Lista numerada' },
+  { command: 'removeFormat', icon: 'eraser', label: 'Limpiar formato' },
+]
+
+const allowedRichTextTags = new Set([
+  'B',
+  'BLOCKQUOTE',
+  'BR',
+  'DIV',
+  'EM',
+  'H2',
+  'H3',
+  'I',
+  'LI',
+  'OL',
+  'P',
+  'S',
+  'STRIKE',
+  'STRONG',
+  'U',
+  'UL',
+])
 
 function statusLabel(status: RoadmapNodeStatus) {
   return statusOptions.find((option) => option.value === status)?.label ?? status
@@ -151,6 +188,25 @@ function normalizeNode(value: unknown): RoadmapNode {
   }
 }
 
+function sanitizeRichText(html: string) {
+  if (!html.trim()) return ''
+  const parsed = new window.DOMParser().parseFromString(html, 'text/html')
+  parsed.body.querySelectorAll('*').forEach((element) => {
+    if (!allowedRichTextTags.has(element.tagName)) {
+      element.replaceWith(...Array.from(element.childNodes))
+      return
+    }
+    Array.from(element.attributes).forEach((attribute) => element.removeAttribute(attribute.name))
+  })
+  return parsed.body.innerHTML.trim()
+}
+
+function htmlToPlainText(html: string) {
+  if (!html.trim()) return ''
+  const parsed = new window.DOMParser().parseFromString(html, 'text/html')
+  return parsed.body.textContent?.trim() ?? ''
+}
+
 export function normalizeRoadmapDocument(value: unknown): RoadmapDocument {
   const document = (value && typeof value === 'object' ? value : {}) as Partial<RoadmapDocument>
   return {
@@ -159,6 +215,7 @@ export function normalizeRoadmapDocument(value: unknown): RoadmapDocument {
       id: String(document.project?.id || 'roadmap'),
       name: String(document.project?.name || 'Roadmap'),
     },
+    ideasHtml: sanitizeRichText(String(document.ideasHtml ?? '')),
     nodes: Array.isArray(document.nodes) ? applyAutomaticStatuses(document.nodes.map(normalizeNode)) : [],
   }
 }
@@ -463,6 +520,7 @@ export function RoadmapEditor({
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const idInputRef = useRef<HTMLInputElement>(null)
+  const ideasEditorRef = useRef<HTMLDivElement>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
 
   const flatNodes = useMemo(() => flatten(document.nodes), [document.nodes])
@@ -479,13 +537,15 @@ export function RoadmapEditor({
   const visibleIds = useMemo(() => {
     const text = query.trim().toLowerCase()
     if (!text) return new Set(flatNodes.map(({ node }) => node.id))
+    const ideasText = htmlToPlainText(document.ideasHtml).toLowerCase()
     const matches = flatNodes.filter(({ node }) =>
       [node.id, node.title, node.content].join(' ').toLowerCase().includes(text),
     )
+    if (matches.length === 0 && ideasText.includes(text)) return new Set(flatNodes.map(({ node }) => node.id))
     const ids = new Set<string>()
     matches.forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
     return ids
-  }, [flatNodes, query])
+  }, [document.ideasHtml, flatNodes, query])
   const navigationNodes = useMemo(() => {
     const isSearching = query.trim().length > 0
     return flatNodes.filter(({ node, path }) => {
@@ -513,8 +573,29 @@ export function RoadmapEditor({
     if (focusIdNonce > 0) idInputRef.current?.focus()
   }, [focusIdNonce])
 
+  useEffect(() => {
+    const editor = ideasEditorRef.current
+    if (!editor || window.document.activeElement === editor) return
+    if (editor.innerHTML !== document.ideasHtml) editor.innerHTML = document.ideasHtml
+  }, [document.ideasHtml])
+
   function emitNodes(nodes: RoadmapNode[]) {
     onChange({ ...document, nodes: applyAutomaticStatuses(nodes) })
+  }
+
+  function updateIdeasHtml(html: string) {
+    onChange({ ...document, ideasHtml: sanitizeRichText(html) })
+  }
+
+  function handleIdeasInput(event: FormEvent<HTMLDivElement>) {
+    updateIdeasHtml(event.currentTarget.innerHTML)
+  }
+
+  function formatIdeas(event: MouseEvent<HTMLButtonElement>, action: FormatAction) {
+    event.preventDefault()
+    ideasEditorRef.current?.focus()
+    window.document.execCommand(action.command, false, action.value)
+    updateIdeasHtml(ideasEditorRef.current?.innerHTML ?? '')
   }
 
   function selectNode(node: RoadmapNode) {
@@ -714,7 +795,7 @@ export function RoadmapEditor({
 
   function exportBranch() {
     if (!selectedNode) return
-    downloadText(`${selectedNode.id || 'rama'}.json`, stringifyRoadmapJson({ ...document, nodes: [selectedNode] }))
+    downloadText(`${selectedNode.id || 'rama'}.json`, stringifyRoadmapJson({ ...document, ideasHtml: '', nodes: [selectedNode] }))
   }
 
   function openImport(mode: ImportMode) {
@@ -813,6 +894,13 @@ export function RoadmapEditor({
           : []
         : document.nodes
   const printMarkdown = printNodes.map((node) => nodeMarkdown(node, 1, printScope !== 'selected')).join('\n\n')
+  const printIdeasHtml = sanitizeRichText(document.ideasHtml)
+  const printHtml = [
+    printIdeasHtml && printScope === 'all'
+      ? `<h1>Ideas del arbol</h1><section class="ideas-print">${printIdeasHtml}</section>`
+      : '',
+    markdownToHtml(printMarkdown),
+  ].filter(Boolean).join('\n')
 
   function renderNode(node: RoadmapNode, depth = 0, parentId = '', index = 0) {
     if (!visibleIds.has(node.id)) return null
@@ -1076,8 +1164,45 @@ export function RoadmapEditor({
           </aside>
 
           <section className="text-editor">
-          {selectedNode ? (
-            <>
+            <section className="ideas-panel no-print" aria-labelledby="ideas-title">
+              <div className="ideas-heading">
+                <div>
+                  <span>Notas globales</span>
+                  <h2 id="ideas-title">Ideas del arbol</h2>
+                </div>
+                <div className="rich-toolbar" role="toolbar" aria-label="Formato de ideas">
+                  {richTextActions.map((action) => (
+                    <button
+                      aria-label={action.label}
+                      className="icon-only secondary-button"
+                      key={`${action.command}-${action.value ?? ''}`}
+                      onMouseDown={(event) => formatIdeas(event, action)}
+                      title={action.label}
+                      type="button"
+                    >
+                      <Icon name={action.icon} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div
+                aria-label="Ideas del arbol"
+                className="ideas-editor"
+                contentEditable
+                dangerouslySetInnerHTML={{ __html: sanitizeRichText(document.ideasHtml) }}
+                onBlur={(event) => {
+                  const html = sanitizeRichText(event.currentTarget.innerHTML)
+                  event.currentTarget.innerHTML = html
+                  updateIdeasHtml(html)
+                }}
+                onInput={handleIdeasInput}
+                ref={ideasEditorRef}
+                role="textbox"
+                suppressContentEditableWarning
+              />
+            </section>
+            {selectedNode ? (
+              <>
               <div className="selected-progress no-print">
                 <div>
                   <span>Progreso</span>
@@ -1114,10 +1239,10 @@ export function RoadmapEditor({
                 placeholder="Markdown de la fase"
                 value={selectedNode.content}
               />
-            </>
-          ) : (
-            <p className="empty-state">Selecciona o crea una fase.</p>
-          )}
+              </>
+            ) : (
+              <p className="empty-state">Selecciona o crea una fase.</p>
+            )}
           </section>
         </section>
       )}
@@ -1225,7 +1350,7 @@ export function RoadmapEditor({
         </div>
       ) : null}
 
-      <section className="print-surface" dangerouslySetInnerHTML={{ __html: markdownToHtml(printMarkdown) }} />
+      <section className="print-surface" dangerouslySetInnerHTML={{ __html: printHtml }} />
     </main>
   )
 }

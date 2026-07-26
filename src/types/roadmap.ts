@@ -4,6 +4,7 @@ export type RoadmapDocument = {
     id: string
     name: string
   }
+  ideasHtml: string
   nodes: RoadmapNode[]
 }
 

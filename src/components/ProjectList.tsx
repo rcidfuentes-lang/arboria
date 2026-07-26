@@ -20,6 +20,7 @@ const initialDocument: RoadmapDocument = {
     id: 'nuevo-proyecto',
     name: 'Nuevo proyecto',
   },
+  ideasHtml: '',
   nodes: [
     {
       id: '',

@@ -1329,8 +1329,9 @@ h2 {
 
 .text-editor {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   align-items: start;
+  gap: 0.65rem;
   min-height: 0;
   overflow: hidden;
   padding: 0.9rem 1rem 1rem;
@@ -1349,7 +1350,6 @@ h2 {
   border-radius: 8px;
   display: grid;
   gap: 0.5rem;
-  margin-bottom: 0.65rem;
   padding: 0.65rem 0.75rem;
 }
 
@@ -1388,7 +1388,6 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin-bottom: 0.65rem;
 }
 
 .editor-actions button {
@@ -1406,7 +1405,6 @@ h2 {
   display: grid;
   gap: 0.65rem;
   grid-template-columns: minmax(140px, 0.8fr) minmax(220px, 1.4fr) minmax(150px, 0.6fr);
-  margin-bottom: 0.65rem;
 }
 
 .editor-fields label {
@@ -1429,6 +1427,103 @@ h2 {
   min-height: 0;
   overflow: auto;
   resize: none;
+}
+
+.ideas-panel {
+  background: #fbfdfb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  min-height: 210px;
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.ideas-heading {
+  align-items: start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.ideas-heading > div:first-child {
+  min-width: 0;
+}
+
+.ideas-heading span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 900;
+  margin-bottom: 0.15rem;
+  text-transform: uppercase;
+}
+
+.ideas-heading h2 {
+  font-size: 1.05rem;
+}
+
+.rich-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+.rich-toolbar button {
+  border-radius: 6px;
+  min-height: 32px;
+  width: 32px;
+}
+
+.ideas-editor {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  line-height: 1.55;
+  min-height: 130px;
+  overflow: auto;
+  padding: 0.8rem 0.9rem;
+}
+
+.ideas-editor:empty::before {
+  color: var(--muted);
+  content: 'Apunta ideas, dudas, decisiones o enlaces de este arbol...';
+}
+
+.ideas-editor:focus {
+  border-color: var(--brand);
+  outline: 3px solid rgba(8, 140, 63, 0.16);
+}
+
+.ideas-editor p,
+.ideas-editor div,
+.ideas-editor blockquote,
+.ideas-editor ul,
+.ideas-editor ol {
+  margin: 0 0 0.65rem;
+}
+
+.ideas-editor blockquote {
+  border-left: 3px solid var(--brand);
+  color: var(--muted);
+  padding-left: 0.75rem;
+}
+
+.ideas-editor ul,
+.ideas-editor ol {
+  padding-left: 1.25rem;
+}
+
+.ideas-editor li {
+  margin-bottom: 0.3rem;
+}
+
+.ideas-editor > :last-child {
+  margin-bottom: 0;
 }
 
 .modal-backdrop {
@@ -1561,5 +1656,11 @@ h2 {
   .print-surface h5,
   .print-surface h6 {
     break-after: avoid;
+  }
+
+  .ideas-print {
+    border-bottom: 1px solid #cccccc;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
   }
 }
