@@ -1329,7 +1329,7 @@ h2 {
 
 .text-editor {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   align-items: start;
   gap: 0.65rem;
   min-height: 0;
@@ -1429,41 +1429,6 @@ h2 {
   resize: none;
 }
 
-.ideas-panel {
-  background: #fbfdfb;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  display: grid;
-  gap: 0.65rem;
-  min-height: 210px;
-  min-width: 0;
-  padding: 0.75rem;
-}
-
-.ideas-heading {
-  align-items: start;
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
-}
-
-.ideas-heading > div:first-child {
-  min-width: 0;
-}
-
-.ideas-heading span {
-  color: var(--muted);
-  display: block;
-  font-size: 0.76rem;
-  font-weight: 900;
-  margin-bottom: 0.15rem;
-  text-transform: uppercase;
-}
-
-.ideas-heading h2 {
-  font-size: 1.05rem;
-}
-
 .rich-toolbar {
   align-items: center;
   display: flex;
@@ -1478,52 +1443,171 @@ h2 {
   width: 32px;
 }
 
-.ideas-editor {
+.ideas-repository {
+  display: grid;
+  grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ideas-list-panel {
+  background: #fbfdfb;
+  border-right: 1px solid var(--border);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ideas-list-toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.8rem 0.9rem;
+}
+
+.ideas-list-toolbar h2 {
+  font-size: 1.1rem;
+}
+
+.ideas-list-toolbar span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.ideas-list {
+  display: grid;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0;
+  overflow: auto;
+  padding: 0.65rem;
+}
+
+.ideas-list li {
+  min-width: 0;
+}
+
+.ideas-list button {
+  background: transparent;
+  border-radius: 8px;
+  color: var(--text);
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+  min-height: 76px;
+  padding: 0.7rem 0.75rem;
+  text-align: left;
+  width: 100%;
+}
+
+.ideas-list button:hover,
+.ideas-list button.active {
+  background: var(--panel-soft);
+}
+
+.ideas-list strong,
+.ideas-list span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ideas-list span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ideas-empty {
+  padding: 1rem;
+}
+
+.idea-detail-panel {
+  align-content: start;
+  display: grid;
+  gap: 0.75rem;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.idea-title-row {
+  align-items: center;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr) 38px;
+}
+
+.idea-title-row input {
+  font-size: 1.25rem;
+  font-weight: 850;
+  margin: 0;
+}
+
+.idea-toolbar {
+  justify-content: flex-start;
+}
+
+.idea-body-editor {
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
+  align-self: stretch;
   line-height: 1.55;
-  min-height: 130px;
+  min-height: 0;
   overflow: auto;
-  padding: 0.8rem 0.9rem;
+  padding: 1rem;
 }
 
-.ideas-editor:empty::before {
+.idea-body-editor:empty::before {
   color: var(--muted);
-  content: 'Apunta ideas, dudas, decisiones o enlaces de este arbol...';
+  content: 'Escribe la idea, comentario, decision o apunte...';
 }
 
-.ideas-editor:focus {
+.idea-body-editor:focus {
   border-color: var(--brand);
   outline: 3px solid rgba(8, 140, 63, 0.16);
 }
 
-.ideas-editor p,
-.ideas-editor div,
-.ideas-editor blockquote,
-.ideas-editor ul,
-.ideas-editor ol {
+.idea-body-editor p,
+.idea-body-editor div,
+.idea-body-editor blockquote,
+.idea-body-editor ul,
+.idea-body-editor ol {
   margin: 0 0 0.65rem;
 }
 
-.ideas-editor blockquote {
+.idea-body-editor blockquote {
   border-left: 3px solid var(--brand);
   color: var(--muted);
   padding-left: 0.75rem;
 }
 
-.ideas-editor ul,
-.ideas-editor ol {
+.idea-body-editor ul,
+.idea-body-editor ol {
   padding-left: 1.25rem;
 }
 
-.ideas-editor li {
+.idea-body-editor li {
   margin-bottom: 0.3rem;
 }
 
-.ideas-editor > :last-child {
+.idea-body-editor > :last-child {
   margin-bottom: 0;
+}
+
+.idea-empty-detail {
+  align-content: center;
+  display: grid;
+  gap: 0.9rem;
+  justify-items: start;
+  min-height: 320px;
 }
 
 .modal-backdrop {
@@ -1614,6 +1698,16 @@ h2 {
   .roadmap-body {
     grid-template-columns: 1fr;
     grid-template-rows: 42% 58%;
+  }
+
+  .ideas-repository {
+    grid-template-columns: 1fr;
+    grid-template-rows: 38% 62%;
+  }
+
+  .ideas-list-panel {
+    border-bottom: 1px solid var(--border);
+    border-right: 0;
   }
 
   .file-tree {

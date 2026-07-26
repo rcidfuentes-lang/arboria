@@ -4,8 +4,16 @@ export type RoadmapDocument = {
     id: string
     name: string
   }
-  ideasHtml: string
+  ideas: RoadmapIdea[]
   nodes: RoadmapNode[]
+}
+
+export type RoadmapIdea = {
+  id: string
+  title: string
+  bodyHtml: string
+  created_at: string
+  updated_at: string
 }
 
 export type RoadmapNodeStatus =
