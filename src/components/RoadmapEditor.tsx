@@ -926,7 +926,11 @@ export function RoadmapEditor({
   async function copySelectedJson() {
     if (!selectedNode) return
     const nextNode = { ...selectedNode, status: 'in_progress' as RoadmapNodeStatus }
-    emitNodes(updateNode(document.nodes, selectedNode.id, () => nextNode))
+    const automaticNodes = applyAutomaticStatuses(updateNode(document.nodes, selectedNode.id, () => nextNode))
+    onChange({
+      ...document,
+      nodes: updateNode(automaticNodes, selectedNode.id, (node) => ({ ...node, status: 'in_progress' })),
+    })
     await copyText(nodeJson(nextNode))
   }
 
