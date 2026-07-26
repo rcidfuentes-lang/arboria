@@ -569,8 +569,8 @@ function markdownToHtml(markdown: string) {
 
 function syncLabel(syncStatus: SyncStatus) {
   if (syncStatus === 'local') return 'Guardado localmente'
-  if (syncStatus === 'syncing') return 'Sincronizando'
-  if (syncStatus === 'synced') return 'Sincronizado'
+  if (syncStatus === 'syncing') return 'Guardando'
+  if (syncStatus === 'synced') return 'Guardado'
   return 'Error'
 }
 
@@ -1193,6 +1193,7 @@ export function RoadmapEditor({
               <h2>Ideas y comentarios</h2>
               <span>{document.ideas.length} guardadas</span>
             </div>
+            <input aria-label="Buscar ideas" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar ideas" type="search" value={query} />
             <button aria-label="Nueva idea" className="icon-only" onClick={createIdea} title="Nueva idea" type="button">
               <Icon name="plus" />
             </button>
@@ -1292,13 +1293,12 @@ export function RoadmapEditor({
           <span style={{ width: `${projectProgress}%` }} />
           <strong>{projectProgress}%</strong>
         </span>
-        <span className={`sync-state ${syncStatus}`}>{syncLabel(syncStatus)}{syncError ? ` · ${syncError}` : ''}</span>
-        <input aria-label="Buscar" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar" type="search" value={query} />
         <div className="mode-switch" role="group" aria-label="Vista del editor">
           <button className={editorMode === 'editor' ? 'active' : ''} onClick={() => setEditorMode('editor')} type="button"><Icon name="fileBranch" /> Editar</button>
           <button className={editorMode === 'canvas' ? 'active' : ''} onClick={() => setEditorMode('canvas')} type="button"><Icon name="gitMerge" /> Esquema</button>
           <button className={editorMode === 'ideas' ? 'active' : ''} onClick={() => setEditorMode('ideas')} type="button"><Icon name="quote" /> Ideas</button>
         </div>
+        <span className={`sync-state ${syncStatus}`} title={syncError || syncLabel(syncStatus)}>{syncLabel(syncStatus)}</span>
         <div className="toolbar-group">
           <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
           <button className="secondary-button" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /> Importar JSON</button>
@@ -1318,6 +1318,7 @@ export function RoadmapEditor({
         <section className="branch-canvas-panel full-screen no-print" aria-label="Editor visual de ramas">
             <div className="canvas-toolbar">
               <button className="secondary-button" onClick={() => setEditorMode('editor')} type="button"><Icon name="arrowLeft" /> Editar</button>
+              <input aria-label="Buscar fases" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar fases" type="search" value={query} />
               <button onClick={() => addNode('')} type="button"><Icon name="plus" /> Raiz</button>
               <button
                 className="secondary-button"
@@ -1391,6 +1392,7 @@ export function RoadmapEditor({
           <aside className="file-tree no-print">
             <div className="tree-mini-actions">
               <button onClick={() => addNode('')} title="Añadir fase raiz" type="button"><Icon name="plus" /> Raiz</button>
+              <input aria-label="Buscar fases" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar fases" type="search" value={query} />
               <button aria-label="Expandir todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} title="Expandir todo" type="button"><Icon name="maximize" /></button>
               <button aria-label="Contraer todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set())} title="Contraer todo" type="button"><Icon name="minimize" /></button>
               <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
