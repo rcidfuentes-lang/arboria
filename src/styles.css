@@ -1492,16 +1492,9 @@ h2 {
 }
 
 .editor-fields input,
-.editor-fields textarea,
 .editor-fields select {
   margin-top: 0.25rem;
   padding: 0.6rem 0.7rem;
-}
-
-.editor-fields textarea {
-  line-height: 1.35;
-  min-height: 2.75rem;
-  resize: vertical;
 }
 
 .content-editor {

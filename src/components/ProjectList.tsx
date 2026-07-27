@@ -25,7 +25,7 @@ const initialDocument: RoadmapDocument = {
     {
       id: '',
       title: 'Nueva fase',
-      status: 'pending',
+      status: 'planned',
       content: '',
       children: [],
     },

@@ -78,7 +78,7 @@ const richTextActions: FormatAction[] = [
 const branchJsonExample = stringifyRoadmapJson({
   id: 'nueva-rama',
   title: 'Nueva rama',
-  status: 'pending',
+  status: 'planned',
   content: 'Notas o markdown de esta fase.',
   children: [
     {
@@ -119,7 +119,7 @@ function normalizeStatus(value: unknown): RoadmapNodeStatus {
   if (allowedStatuses.has(value as RoadmapNodeStatus)) {
     return value as RoadmapNodeStatus
   }
-  return 'pending'
+  return 'planned'
 }
 
 function statusProgress(status: RoadmapNodeStatus) {
@@ -408,7 +408,7 @@ function createNode(existingIds: Set<string>): RoadmapNode {
   return {
     id,
     title: 'Nueva fase',
-    status: 'pending',
+    status: 'planned',
     content: '',
     children: [],
   }
@@ -1004,6 +1004,22 @@ export function RoadmapEditor({
     }
   }
 
+  function handleContentKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || !selectedNode) return
+
+    event.preventDefault()
+    const editor = event.currentTarget
+    const start = editor.selectionStart
+    const end = editor.selectionEnd
+    const nextContent = `${editor.value.slice(0, start)}\n${editor.value.slice(end)}`
+    const nextCursor = start + 1
+
+    updateSelected('content', nextContent)
+    window.requestAnimationFrame(() => {
+      editor.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
   function deleteNode(node: RoadmapNode) {
     if (!window.confirm(`Eliminar "${node.title}" y sus descendientes?`)) return
     emitNodes(removeNode(document.nodes, node.id))
@@ -1535,13 +1551,14 @@ export function RoadmapEditor({
               </aside>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onBlur={commitSelectedId} onChange={(event) => setIdDraft(event.target.value)} onKeyDown={handleIdKeyDown} value={idDraft} /></label>
-                <label>Título<textarea onChange={(event) => updateSelected('title', event.target.value)} rows={2} value={selectedNode.title} /></label>
+                <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>
                 <label>Estado<select onChange={(event) => updateSelected('status', event.target.value as RoadmapNodeStatus)} value={selectedNode.status}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               </div>
               <textarea
                 aria-label="Contenido"
                 className="content-editor"
                 onChange={(event) => updateSelected('content', event.target.value)}
+                onKeyDown={handleContentKeyDown}
                 placeholder="Markdown de la fase"
                 value={selectedNode.content}
               />
