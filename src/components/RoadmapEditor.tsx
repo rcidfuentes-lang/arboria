@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, DragEvent, FormEvent, MouseEvent } from 'react'
+import type { CSSProperties, DragEvent, FormEvent, KeyboardEvent, MouseEvent } from 'react'
 import type {
   RoadmapDocument,
   RoadmapIdea,
@@ -205,6 +205,46 @@ function normalizeNode(value: unknown): RoadmapNode {
   }
 }
 
+function createUniqueNodeId(existingIds: Set<string>, base = 'fase') {
+  const randomPart = window.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10)
+  let candidate = `${base}-${Date.now().toString(36)}-${randomPart}`
+  let index = 2
+
+  while (existingIds.has(candidate)) {
+    candidate = `${base}-${Date.now().toString(36)}-${randomPart}-${index}`
+    index += 1
+  }
+
+  existingIds.add(candidate)
+  return candidate
+}
+
+function makeUniqueNodeId(existingIds: Set<string>, value: string, fallback = 'fase') {
+  const base = value.trim() || fallback
+  let candidate = base
+  let index = 2
+
+  while (existingIds.has(candidate)) {
+    candidate = `${base}-${index}`
+    index += 1
+  }
+
+  existingIds.add(candidate)
+  return candidate
+}
+
+function ensureUniqueNodeIds(nodes: RoadmapNode[], existingIds = new Set<string>()): RoadmapNode[] {
+  return nodes.map((node) => {
+    const nextId = makeUniqueNodeId(existingIds, node.id)
+
+    return {
+      ...node,
+      id: nextId,
+      children: ensureUniqueNodeIds(node.children, existingIds),
+    }
+  })
+}
+
 function sanitizeRichText(html: string) {
   if (!html.trim()) return ''
   const parsed = new window.DOMParser().parseFromString(html, 'text/html')
@@ -261,7 +301,9 @@ export function normalizeRoadmapDocument(value: unknown): RoadmapDocument {
     ideas: Array.isArray(document.ideas)
       ? document.ideas.map(normalizeIdea)
       : ideasFromLegacyHtml(legacyDocument.ideasHtml),
-    nodes: Array.isArray(document.nodes) ? applyAutomaticStatuses(document.nodes.map(normalizeNode)) : [],
+    nodes: Array.isArray(document.nodes)
+      ? applyAutomaticStatuses(ensureUniqueNodeIds(document.nodes.map(normalizeNode)))
+      : [],
   }
 }
 
@@ -361,8 +403,8 @@ export function stringifyRoadmapJson(value: unknown) {
   return `${JSON.stringify(value, null, 2)}\n`
 }
 
-function createNode(): RoadmapNode {
-  const id = `fase-${Date.now().toString(36)}`
+function createNode(existingIds: Set<string>): RoadmapNode {
+  const id = createUniqueNodeId(existingIds)
   return {
     id,
     title: 'Nueva fase',
@@ -614,6 +656,7 @@ export function RoadmapEditor({
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
+  const [idDraft, setIdDraft] = useState('')
   const idInputRef = useRef<HTMLInputElement>(null)
   const ideaEditorRef = useRef<HTMLDivElement>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
@@ -675,6 +718,10 @@ export function RoadmapEditor({
   useEffect(() => {
     if (focusIdNonce > 0) idInputRef.current?.focus()
   }, [focusIdNonce])
+
+  useEffect(() => {
+    setIdDraft(selectedNode?.id ?? '')
+  }, [selectedNode?.id])
 
   useEffect(() => {
     if (selectedIdeaId && document.ideas.some((idea) => idea.id === selectedIdeaId)) return
@@ -755,7 +802,7 @@ export function RoadmapEditor({
   }
 
   function addNode(parentId: string, index?: number) {
-    const node = createNode()
+    const node = createNode(collectNodeIds(document.nodes))
     emitNodes(insertNode(document.nodes, parentId, node, index))
     setSelectedId(node.id)
     if (parentId) setExpandedIds((current) => new Set([...current, parentId]))
@@ -906,8 +953,55 @@ export function RoadmapEditor({
   function updateSelected<K extends keyof RoadmapNode>(key: K, value: RoadmapNode[K]) {
     if (!selectedNode) return
     const previousId = selectedNode.id
-    emitNodes(updateNode(document.nodes, previousId, (node) => ({ ...node, [key]: value })))
-    if (key === 'id') setSelectedId(String(value))
+    let nextValue = value
+
+    if (key === 'id') {
+      const nextId = String(value).trim()
+      const duplicateId = nextId && collectNodeIds(document.nodes, new Set([previousId])).has(nextId)
+      if (!nextId || duplicateId) {
+        setErrorMessage(duplicateId ? `Ya existe una fase con el ID "${nextId}".` : 'El ID de la fase no puede quedarse vacio.')
+        return
+      }
+      setErrorMessage('')
+      nextValue = nextId as RoadmapNode[K]
+    }
+
+    emitNodes(updateNode(document.nodes, previousId, (node) => ({ ...node, [key]: nextValue })))
+    if (key === 'id') setSelectedId(String(nextValue))
+  }
+
+  function commitSelectedId() {
+    if (!selectedNode) return
+    const previousId = selectedNode.id
+    const nextId = idDraft.trim()
+    const duplicateId = nextId && collectNodeIds(document.nodes, new Set([previousId])).has(nextId)
+
+    if (!nextId || duplicateId) {
+      setErrorMessage(duplicateId ? `Ya existe una fase con el ID "${nextId}".` : 'El ID de la fase no puede quedarse vacio.')
+      return
+    }
+
+    setIdDraft(nextId)
+    setErrorMessage('')
+    if (nextId === previousId) return
+
+    emitNodes(updateNode(document.nodes, previousId, (node) => ({ ...node, id: nextId })))
+    setSelectedId(nextId)
+  }
+
+  function handleIdKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      commitSelectedId()
+      event.currentTarget.blur()
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setIdDraft(selectedNode?.id ?? '')
+      setErrorMessage('')
+      event.currentTarget.blur()
+    }
   }
 
   function deleteNode(node: RoadmapNode) {
@@ -1440,8 +1534,8 @@ export function RoadmapEditor({
                 <span>Una rama se crea anadiendo fases dentro de <code>children</code>. Usa <b>Subfase</b> para crearla a mano o <b>Importar debajo</b> para pegar JSON como hijos de esta fase.</span>
               </aside>
               <div className="editor-fields no-print">
-                <label>ID<input ref={idInputRef} onChange={(event) => updateSelected('id', event.target.value)} value={selectedNode.id} /></label>
-                <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>
+                <label>ID<input ref={idInputRef} onBlur={commitSelectedId} onChange={(event) => setIdDraft(event.target.value)} onKeyDown={handleIdKeyDown} value={idDraft} /></label>
+                <label>Título<textarea onChange={(event) => updateSelected('title', event.target.value)} rows={2} value={selectedNode.title} /></label>
                 <label>Estado<select onChange={(event) => updateSelected('status', event.target.value as RoadmapNodeStatus)} value={selectedNode.status}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               </div>
               <textarea
