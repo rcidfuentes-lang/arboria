@@ -264,6 +264,13 @@ function htmlToPlainText(html: string) {
   return parsed.body.textContent?.trim() ?? ''
 }
 
+function forceLeftToRightEditor(editor: HTMLDivElement) {
+  editor.dir = 'ltr'
+  editor.style.direction = 'ltr'
+  editor.style.textAlign = 'left'
+  editor.querySelectorAll('[dir]').forEach((element) => element.removeAttribute('dir'))
+}
+
 function normalizeIdea(value: unknown): RoadmapIdea {
   const idea = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
   const now = new Date().toISOString()
@@ -776,6 +783,7 @@ export function RoadmapEditor({
   }
 
   function handleIdeaInput(event: FormEvent<HTMLDivElement>) {
+    forceLeftToRightEditor(event.currentTarget)
     updateSelectedIdeaBody(event.currentTarget.innerHTML)
   }
 
@@ -1371,11 +1379,14 @@ export function RoadmapEditor({
                 className="idea-body-editor"
                 contentEditable
                 dangerouslySetInnerHTML={{ __html: sanitizeRichText(selectedIdea.bodyHtml) }}
+                dir="ltr"
                 onBlur={(event) => {
+                  forceLeftToRightEditor(event.currentTarget)
                   const html = sanitizeRichText(event.currentTarget.innerHTML)
                   event.currentTarget.innerHTML = html
                   updateSelectedIdeaBody(html)
                 }}
+                onFocus={(event) => forceLeftToRightEditor(event.currentTarget)}
                 onInput={handleIdeaInput}
                 ref={ideaEditorRef}
                 role="textbox"

@@ -1589,9 +1589,12 @@ h2 {
 
 .ideas-list strong,
 .ideas-list span {
+  direction: ltr;
   max-width: 100%;
   overflow: hidden;
+  text-align: left;
   text-overflow: ellipsis;
+  unicode-bidi: plaintext;
   white-space: nowrap;
 }
 
@@ -1637,10 +1640,13 @@ h2 {
   border-radius: 8px;
   color: var(--text);
   align-self: stretch;
+  direction: ltr;
   line-height: 1.55;
   min-height: 0;
   overflow: auto;
   padding: 1rem;
+  text-align: left;
+  unicode-bidi: plaintext;
 }
 
 .idea-body-editor:empty::before {
@@ -1658,7 +1664,10 @@ h2 {
 .idea-body-editor blockquote,
 .idea-body-editor ul,
 .idea-body-editor ol {
+  direction: ltr;
   margin: 0 0 0.65rem;
+  text-align: left;
+  unicode-bidi: plaintext;
 }
 
 .idea-body-editor blockquote {
