@@ -1594,7 +1594,7 @@ h2 {
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
-  unicode-bidi: plaintext;
+  unicode-bidi: isolate;
   white-space: nowrap;
 }
 
@@ -1646,7 +1646,7 @@ h2 {
   overflow: auto;
   padding: 1rem;
   text-align: left;
-  unicode-bidi: plaintext;
+  unicode-bidi: isolate;
 }
 
 .idea-body-editor:empty::before {
@@ -1667,7 +1667,7 @@ h2 {
   direction: ltr;
   margin: 0 0 0.65rem;
   text-align: left;
-  unicode-bidi: plaintext;
+  unicode-bidi: isolate;
 }
 
 .idea-body-editor blockquote {

@@ -1378,7 +1378,6 @@ export function RoadmapEditor({
                 aria-label="Contenido de la idea"
                 className="idea-body-editor"
                 contentEditable
-                dangerouslySetInnerHTML={{ __html: sanitizeRichText(selectedIdea.bodyHtml) }}
                 dir="ltr"
                 onBlur={(event) => {
                   forceLeftToRightEditor(event.currentTarget)
