@@ -5,13 +5,21 @@ no lleva cabecera de norma: la norma es de Songplay y este proyecto no lo es.
 
 Fecha: 15/09/2026.
 Punto de partida: `main` en `341ff33`, 28 commits.
-Entregado: rama `api-lectura-roadmap`, dos commits, `HEAD` en `8aedb4d`.
+Entregado y **en servicio** en `https://arboria.rubenstuff.es/api/roadmap`.
 
 ```
+…        Alta de la clave de lectura de Songplay      (migración)
+84212cb  Ignorar la carpeta local de Netlify
+34dc951  Quitar el panel de ayuda de ramas del editor
+865480f  Informe de la API de lectura del roadmap
 8aedb4d  API de lectura del roadmap por clave de proyecto
 66a7015  Extraer el modelo del roadmap a src/lib/roadmap-document.ts
-341ff33  Add GitHub Action to keep Supabase project alive   <- main sigue aquí
+341ff33  Add GitHub Action to keep Supabase project alive   <- punto de partida
 ```
+
+El trabajo se hizo en la rama `api-lectura-roadmap`, para no mover `main`
+mientras quedaban 25 líneas sin commitear en el árbol. Esas líneas se
+commitearon aparte (`34dc951`) y la rama se fusionó en avance rápido.
 
 Material de partida: `AUDITORIA-ARBORIA-material-para-decidir-la-api.md`, en la
 raíz de `songplay/`. Sus hallazgos no se relitigan; cuando algo de aquí los
@@ -500,12 +508,77 @@ saneado. §1.3.c. Además `npm run build` (que es `tsc -b && vite build`) pasa, 
 `ProjectList.tsx`, en código que no se ha tocado. El bundle del cliente no cambia
 de tamaño ni de huella al añadir la función, porque la función no entra en él.
 
-### 5.6 Lo que no se ha podido verificar
+### 5.6 El endpoint desplegado
 
-**El endpoint desplegado.** No se ha desplegado nada. La función no ha corrido en
-Netlify, la migración no se ha aplicado al proyecto alojado, y no existe ninguna
-clave real. Todo lo de arriba se midió en local. **El despliegue lo hace Rubén**,
-y hasta que lo haga la API no está en servicio.
+Puesto en servicio el 15/09/2026. Migraciones aplicadas al proyecto alojado con
+`supabase db push`, código fusionado a `main` y desplegado por Netlify en
+`https://arboria.rubenstuff.es`.
+
+Contra la base real, con la clave anónima: la función existe y `anon` la
+ejecuta, `anon` ve cero filas en `roadmap_projects` y en `roadmap_api_keys`, y
+un intento de insertar una clave como `anon` devuelve `42501`.
+
+Contra el endpoint desplegado, con la clave de Songplay dada de alta:
+
+```
+estado: 200
+cache-control: no-store
+content-type: application/json; charset=utf-8
+server: Netlify
+
+sha256 281e02b42f6eddf856f95ee2dea4f07d468a7a0a89b45044688769d951d5bd18   78 257 bytes
+```
+
+**Esa huella es exactamente la del fichero que Arboria exportó a mano**,
+`nuevo-proyecto-mu15nbxt.json`. Comparados byte a byte con `cmp`: idénticos. Es
+el requisito que manda sobre todo lo demás, comprobado en producción.
+
+No coincide con `docs/roadmap/roadmap.json` (`b2eb8d46…334a9`, 78 433 bytes)
+porque **el contenido es distinto, no la serialización**: el documento vivo en
+Arboria tiene 118 nodos e incluye `SP1.3.8`, y cinco nodos difieren en texto. Es
+la divergencia que la auditoría ya documentaba, y que existe precisamente porque
+el ciclo era manual.
+
+Forma de la respuesta, medida sobre lo que devolvió el servidor:
+
+| | |
+|---|---|
+| claves de la raíz | `schemaVersion, project, ideas, nodes` |
+| claves de un nodo | `id, title, status, content, children` |
+| `project` | `{"id":"songplay-ecosistema","name":"Songplay — Ecosistema"}` |
+| indentación de 2 | sí |
+| salto de línea final | sí |
+| acentos sin escapar | sí |
+| ni un dato de más | sí: ni `owner_id`, ni `slug`, ni fechas, ni envoltura |
+
+Rechazos, todos contra el sitio desplegado:
+
+```
+sin cabecera        401 {"error":"unauthorized"}
+Bearer vacío        401 {"error":"unauthorized"}
+clave inventada     401 {"error":"unauthorized"}
+esquema Basic       401 {"error":"unauthorized"}
+POST con clave      405 {"error":"method_not_allowed"}
+DELETE con clave    405 {"error":"method_not_allowed"}
+```
+
+#### El alta de la clave, y por qué acabó en una migración
+
+`supabase/migrations/20260915150000_alta_clave_lectura_songplay.sql` inserta el
+SHA-256 de la clave. Es un dato en una migración de esquema, que no es su sitio,
+y va ahí porque fue la única vía disponible: el CLI no ejecuta SQL arbitrario, y
+usar la contraseña de la base o el token de cuenta estaba fuera de lo permitido
+en el entorno donde se hizo este trabajo.
+
+Se probó antes contra un PostgreSQL 16 local en cuatro escenarios: inserta una
+fila con el hash correcto apuntando al proyecto correcto; reaplicarla no
+duplica; **una clave revocada no se recrea al reaplicarla**, porque la guarda
+mira que la fila exista, no que esté activa; y si ningún proyecto casa no
+inserta nada y la migración pasa igual.
+
+El proyecto se localiza por el id de su nodo raíz, `SP`. No por
+`document->'project'->>'id'`, que fue el primer intento y casó cero filas en
+silencio, ni por el slug.
 
 ### 5.7 Huellas de lo entregado
 
@@ -541,15 +614,21 @@ Registrado, no arreglado:
 
 ## Cuestiones abiertas
 
-1. ¿Quién aplica la migración al proyecto alojado, y cuándo? Hasta entonces la
-   tabla de claves y la función no existen allí.
+1. El alta de la clave acabó en una migración de esquema porque no había otra
+   vía. ¿Se deja así, o se saca de ahí en cuanto haya una forma de escribir
+   datos en la base sin que una credencial de administración pase por un canal
+   automatizado? Mientras siga ahí, el historial público lleva el SHA-256 de la
+   clave, que es inofensivo, y una migración lleva un dato, que es feo.
 
-2. ¿Se fusiona `api-lectura-roadmap` a `main` o se rehace el trabajo directamente
-   sobre `main`? La rama se hizo para no mover `main` mientras hubiera 25 líneas
-   sin commitear en el árbol.
+2. ¿Qué pasa cuando el roadmap de Songplay tenga una idea escrita? La API
+   devolverá `409 ideas_require_dom` y dejará de servir. Está decidido que falle
+   en alto antes que divergir, pero no está decidido el sustituto del
+   `DOMParser`.
 
-3. ¿Qué pasa con esas 25 líneas? Siguen sin commitear y sin autor. Mientras estén
-   así, cualquier `git stash` o cambio de rama descuidado se las lleva.
+3. La contraseña de la base y el token de cuenta de `.env.codex.local` quedaron
+   expuestos durante este trabajo: la contraseña entera, el token en sus doce
+   primeros caracteres. Rubén decidió no rotarlos hasta terminar. ¿Cuándo se
+   rotan? Ninguno de los dos afecta a la API, que va con la clave anónima.
 
 4. ¿Es correcto que la API falle con `409` cuando el roadmap tenga ideas
    escritas, o hay que decidir ya el sustituto del `DOMParser`? Hoy Songplay
@@ -582,29 +661,21 @@ Registrado, no arreglado:
     dueño superusuario. ¿Hace falta repetirla contra el proyecto real antes de
     darla por buena?
 
-### Qué necesita hacer Rubén a mano para que esto quede en servicio
+### Lo que queda en manos de Rubén
 
-12. **Aplicar la migración** al proyecto alojado, con `supabase db push` o
-    pegando el SQL en el editor de Supabase Studio. Requiere su acceso a la base;
-    no hay ninguna vía por la que yo pueda hacerlo ni deba poder.
+12. **La clave existe en un solo sitio: donde él la haya guardado.** En la base
+    solo hay su SHA-256, y eso es deliberado. Si se pierde, se revoca esa fila y
+    se genera otra; no hay forma de recuperarla. Se generó durante este trabajo y
+    pasó por la conversación, así que conviene tratarla como comprometida y
+    sustituirla por una que él genere con `scripts/generar-clave-de-lectura.mjs`
+    sin que la vea nadie más.
 
-13. **Averiguar el uuid del proyecto de Songplay** en `roadmap_projects`. Se ve
-    en Studio. No es el slug ni `document.project.id`.
+13. **Decidir cómo llega la clave a quien la use.** No por un canal donde quede
+    escrita más tiempo del necesario.
 
-14. **Generar la clave y darla de alta**:
-    `node scripts/generar-clave-de-lectura.mjs <uuid> "Songplay"`, copiar la
-    clave —se imprime una sola vez— y ejecutar en Studio el `INSERT` que el
-    script imprime.
-
-15. **Desplegar**, fusionando la rama o empujándola, y comprobar que Netlify
-    construye la función. No hay que añadir ninguna variable de entorno: las
-    `VITE_*` que ya están puestas sirven. Si prefiere nombres sin prefijo, la
-    función también lee `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY`.
-
-16. **Probar contra el sitio desplegado**:
-    `curl -H "Authorization: Bearer <clave>" https://<el-sitio>/api/roadmap`, y
-    comparar la huella de la respuesta con la de `docs/roadmap/roadmap.json`. Esa
-    es la única comprobación que falta y que yo no puedo hacer.
-
-17. **Decidir cómo llega la clave a quien la vaya a usar.** No por un canal donde
-    quede escrita más tiempo del necesario. Yo no la he visto y no debo verla.
+14. **Conectar Songplay a la API** es un encargo aparte, y con él viene la
+    decisión de qué pasa con `docs/roadmap/roadmap.json`: D3 dice que se queda
+    como copia versionada, pero no quién la actualiza ni cada cuánto ahora que ya
+    no es la fuente. La divergencia medida en §5.6 —118 nodos en Arboria, 117 en
+    el repositorio, cinco con texto distinto— se resuelve sola el día que ese
+    fichero se genere desde la API en vez de a mano.
