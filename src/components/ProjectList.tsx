@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { RoadmapEditor } from './RoadmapEditor'
+import { Icon } from './Icon'
 import {
-  RoadmapEditor,
   normalizeRoadmapDocument,
   parseRoadmapJson,
   stringifyRoadmapJson,
-} from './RoadmapEditor'
-import { Icon } from './Icon'
+} from '../lib/roadmap-document'
 import { supabase } from '../lib/supabase'
 import type { RoadmapDocument, RoadmapProject } from '../types/roadmap'
 
