@@ -1270,10 +1270,6 @@ export function RoadmapEditor({
                 <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase" type="button"><Icon name="check" /></button>
                 <button className="secondary-button" onClick={copySelectedJson} title="Copiar rama JSON" type="button"><Icon name="copy" /> Copiar JSON</button>
               </div>
-              <aside className="branch-help no-print">
-                <strong>{selectedNode.title || selectedNode.id || 'Fase seleccionada'}</strong>
-                <span>Una rama se crea anadiendo fases dentro de <code>children</code>. Usa <b>Subfase</b> para crearla a mano o <b>Importar debajo</b> para pegar JSON como hijos de esta fase.</span>
-              </aside>
               <div className="editor-fields no-print">
                 <label>ID<input ref={idInputRef} onBlur={commitSelectedId} onChange={(event) => setIdDraft(event.target.value)} onKeyDown={handleIdKeyDown} value={idDraft} /></label>
                 <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>

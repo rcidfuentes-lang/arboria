@@ -1449,27 +1449,6 @@ h2 {
   width: 34px;
 }
 
-.branch-help {
-  background: #fbfdfb;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--muted);
-  display: grid;
-  gap: 0.25rem;
-  line-height: 1.4;
-  padding: 0.65rem 0.75rem;
-}
-
-.branch-help strong {
-  color: var(--text);
-  font-size: 0.92rem;
-}
-
-.branch-help span {
-  font-size: 0.86rem;
-}
-
-.branch-help code,
 .modal-hint code {
   background: #edf5ef;
   border: 1px solid #d2e1d6;
