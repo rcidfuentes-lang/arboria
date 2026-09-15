@@ -2,6 +2,17 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+
+# El endpoint de lectura del roadmap. Va antes del comodin de la SPA porque
+# las redirecciones se resuelven en orden y la primera que casa gana: sin esta
+# linea, /api/roadmap devolveria el index.html de la aplicacion.
+[[redirects]]
+  from = "/api/roadmap"
+  to = "/.netlify/functions/roadmap"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

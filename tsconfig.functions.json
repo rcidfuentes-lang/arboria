@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.functions.tsbuildinfo",
+    "target": "es2023",
+    /* DOM esta aqui solo por los tipos: roadmap-document.ts nombra DOMParser en
+       una firma. En ejecucion la funcion corre en Node y no hay DOM, que es
+       justamente lo que RichTextUnavailableError convierte en un fallo visible. */
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Igual que la aplicacion: a la funcion la empaqueta esbuild, no la
+       resuelve el cargador de modulos de Node. */
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["netlify/functions"]
+}
