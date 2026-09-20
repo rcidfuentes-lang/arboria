@@ -15,6 +15,12 @@
   to = "/.netlify/functions/roadmap"
   status = 200
 
+# Servidor MCP remoto. Esta es la direccion que se anade en claude.ai.
+[[redirects]]
+  from = "/mcp"
+  to = "/.netlify/functions/mcp"
+  status = 200
+
 # Descubrimiento del recurso protegido (RFC 9728). En las dos rutas que un
 # cliente puede probar: la de la raiz y la que lleva detras el camino del
 # recurso, /mcp.
