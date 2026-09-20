@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "verificar-api": "node scripts/verificar-api-roadmap.mjs",
     "verificar-mcp": "node scripts/verificar-mcp.mjs",
-    "verificar-esquema-mcp": "bash scripts/verificar-esquema-mcp.sh",
+    "verificar-esquema": "bash scripts/verificar-esquema.sh",
     "preview": "vite preview"
   },
   "dependencies": {

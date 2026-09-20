@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 #
-# Aplica las migraciones en un Postgres de usar y tirar y ejercita las
-# funciones OAuth del conector. No toca Supabase ni ninguna base real: crea un
-# cluster en un directorio temporal, lo usa y lo borra.
+# Aplica las migraciones en un Postgres de usar y tirar y ejercita todo lo que
+# vive en la base: las funciones OAuth del conector y el decisor. No toca
+# Supabase ni ninguna base real: crea un cluster en un directorio temporal, lo
+# usa y lo borra.
 #
-#   scripts/verificar-esquema-mcp.sh
+#   scripts/verificar-esquema.sh
 #
 # Hace falta un Postgres 17 instalado. Si no esta en el PATH, se le pasa el
 # directorio de binarios:
 #
-#   PG_BIN=/opt/homebrew/opt/postgresql@17/bin scripts/verificar-esquema-mcp.sh
+#   PG_BIN=/opt/homebrew/opt/postgresql@17/bin scripts/verificar-esquema.sh
 set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -44,4 +45,10 @@ psql -f "$RAIZ/scripts/sql/00-supabase-simulado.sql"
 for migracion in "$RAIZ"/supabase/migrations/*.sql; do
   psql -f "$migracion"
 done
-psql -f "$RAIZ/scripts/sql/01-pruebas-oauth.sql"
+# Cada fichero de pruebas corre en su propia sesion, asi que lo temporal de uno
+# no llega al siguiente. Es a proposito: cada uno se basta solo.
+for pruebas in "$RAIZ"/scripts/sql/0[1-9]-pruebas-*.sql; do
+  echo
+  echo "== $(basename "$pruebas")"
+  psql -f "$pruebas"
+done

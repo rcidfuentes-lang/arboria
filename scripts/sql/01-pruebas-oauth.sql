@@ -5,7 +5,7 @@
 -- cambia de rol con set_config('role', ...) y de usuario con el claim que lee
 -- auth.uid(), que es como llegan las llamadas de PostgREST.
 --
--- Se lanza con scripts/verificar-esquema-mcp.sh.
+-- Se lanza con scripts/verificar-esquema.sh.
 
 create temp table resultados (n serial, prueba text, ok boolean, detalle text);
 grant all on resultados to public;
