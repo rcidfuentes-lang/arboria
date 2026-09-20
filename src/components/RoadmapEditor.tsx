@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, DragEvent, FormEvent, KeyboardEvent, MouseEvent } from 'react'
+import type { CSSProperties, DragEvent, KeyboardEvent } from 'react'
 import type {
   RoadmapDocument,
-  RoadmapIdea,
   RoadmapNode,
   RoadmapNodeStatus,
   RoadmapProject,
 } from '../types/roadmap'
+import { Decisor } from './Decisor'
 import { Icon } from './Icon'
 import {
   applyAutomaticStatuses,
-  htmlToPlainText,
   normalizeRoadmapDocument,
   parseRoadmapImportJson,
-  sanitizeRichText,
   statusLabel,
   statusOptions,
   stringifyRoadmapJson,
@@ -24,6 +22,8 @@ type SyncStatus = 'local' | 'syncing' | 'synced' | 'error'
 type RoadmapEditorProps = {
   availableProjects: RoadmapProject[]
   document: RoadmapDocument
+  /** El uuid de la fila del proyecto. Lo necesita el decisor, que escribe en su propia tabla. */
+  projectId: string
   syncError: string
   syncStatus: SyncStatus
   onBack: () => void
@@ -40,7 +40,7 @@ type FlatNode = {
 }
 
 type ImportMode = 'replace-project' | 'append-to-selected' | 'replace-selected'
-type EditorMode = 'editor' | 'canvas' | 'ideas'
+type EditorMode = 'editor' | 'canvas' | 'decisor'
 type ProjectMergeMode = 'append-root' | 'append-to-selected'
 type DropTarget =
   | { type: 'root' }
@@ -52,28 +52,10 @@ type CanvasNode = FlatNode & {
   y: number
 }
 
-type FormatAction = {
-  command: string
-  icon: Parameters<typeof Icon>[0]['name']
-  label: string
-  value?: string
-}
-
 const canvasNodeWidth = 380
 const canvasNodeHeight = 126
 const canvasColumnGap = 470
 const canvasRowGap = 158
-
-const richTextActions: FormatAction[] = [
-  { command: 'bold', icon: 'bold', label: 'Negrita' },
-  { command: 'italic', icon: 'italic', label: 'Cursiva' },
-  { command: 'underline', icon: 'underline', label: 'Subrayado' },
-  { command: 'strikeThrough', icon: 'strikethrough', label: 'Tachado' },
-  { command: 'formatBlock', icon: 'quote', label: 'Cita', value: 'blockquote' },
-  { command: 'insertUnorderedList', icon: 'list', label: 'Lista' },
-  { command: 'insertOrderedList', icon: 'listOrdered', label: 'Lista numerada' },
-  { command: 'removeFormat', icon: 'eraser', label: 'Limpiar formato' },
-]
 
 const branchJsonExample = stringifyRoadmapJson({
   id: 'nueva-rama',
@@ -116,13 +98,6 @@ function createUniqueNodeId(existingIds: Set<string>, base = 'fase') {
 
   existingIds.add(candidate)
   return candidate
-}
-
-function forceLeftToRightEditor(editor: HTMLDivElement) {
-  editor.dir = 'ltr'
-  editor.style.direction = 'ltr'
-  editor.style.textAlign = 'left'
-  editor.querySelectorAll('[dir]').forEach((element) => element.removeAttribute('dir'))
 }
 
 function createNode(existingIds: Set<string>): RoadmapNode {
@@ -354,6 +329,7 @@ async function copyText(text: string) {
 export function RoadmapEditor({
   availableProjects,
   document,
+  projectId,
   onBack,
   onChange,
   onSignOut,
@@ -377,10 +353,8 @@ export function RoadmapEditor({
   const [editorMode, setEditorMode] = useState<EditorMode>('editor')
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
-  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
   const [idDraft, setIdDraft] = useState('')
   const idInputRef = useRef<HTMLInputElement>(null)
-  const ideaEditorRef = useRef<HTMLDivElement>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
 
   const flatNodes = useMemo(() => flatten(document.nodes), [document.nodes])
@@ -389,9 +363,6 @@ export function RoadmapEditor({
     () => flatNodes.find(({ node }) => node.id === selectedId) ?? null,
     [flatNodes, selectedId],
   )
-  const selectedIdea = selectedIdeaId === null
-    ? document.ideas[0] ?? null
-    : document.ideas.find((idea) => idea.id === selectedIdeaId) ?? document.ideas[0] ?? null
   const projectProgress = useMemo(() => {
     if (document.nodes.length === 0) return 0
     const totalProgress = document.nodes.reduce((total, node) => total + nodeProgress(node), 0)
@@ -407,13 +378,6 @@ export function RoadmapEditor({
     matches.forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
     return ids
   }, [flatNodes, query])
-  const filteredIdeas = useMemo(() => {
-    const text = query.trim().toLowerCase()
-    if (!text) return document.ideas
-    return document.ideas.filter((idea) =>
-      [idea.title, htmlToPlainText(idea.bodyHtml)].join(' ').toLowerCase().includes(text),
-    )
-  }, [document.ideas, query])
   const navigationNodes = useMemo(() => {
     const isSearching = query.trim().length > 0
     return flatNodes.filter(({ node, path }) => {
@@ -445,68 +409,8 @@ export function RoadmapEditor({
     setIdDraft(selectedNode?.id ?? '')
   }, [selectedNode?.id])
 
-  useEffect(() => {
-    if (selectedIdeaId && document.ideas.some((idea) => idea.id === selectedIdeaId)) return
-    setSelectedIdeaId(document.ideas[0]?.id ?? null)
-  }, [document.ideas, selectedIdeaId])
-
-  useEffect(() => {
-    const editor = ideaEditorRef.current
-    if (!editor || window.document.activeElement === editor) return
-    const nextHtml = selectedIdea?.bodyHtml ?? ''
-    if (editor.innerHTML !== nextHtml) editor.innerHTML = nextHtml
-  }, [selectedIdea])
-
   function emitNodes(nodes: RoadmapNode[]) {
     onChange({ ...document, nodes: applyAutomaticStatuses(nodes) })
-  }
-
-  function updateIdeas(ideas: RoadmapIdea[]) {
-    onChange({ ...document, ideas })
-  }
-
-  function createIdea() {
-    const now = new Date().toISOString()
-    const idea: RoadmapIdea = {
-      id: `idea-${Date.now().toString(36)}`,
-      title: 'Nueva idea',
-      bodyHtml: '',
-      created_at: now,
-      updated_at: now,
-    }
-    updateIdeas([idea, ...document.ideas])
-    setSelectedIdeaId(idea.id)
-    window.setTimeout(() => ideaEditorRef.current?.focus(), 30)
-  }
-
-  function updateIdea(id: string, updater: (idea: RoadmapIdea) => RoadmapIdea) {
-    updateIdeas(document.ideas.map((idea) => (
-      idea.id === id ? { ...updater(idea), updated_at: new Date().toISOString() } : idea
-    )))
-  }
-
-  function updateSelectedIdeaBody(html: string) {
-    if (!selectedIdea) return
-    updateIdea(selectedIdea.id, (idea) => ({ ...idea, bodyHtml: sanitizeRichText(html) }))
-  }
-
-  function deleteIdea(idea: RoadmapIdea) {
-    if (!window.confirm(`Eliminar "${idea.title}"?`)) return
-    const nextIdeas = document.ideas.filter((item) => item.id !== idea.id)
-    updateIdeas(nextIdeas)
-    setSelectedIdeaId(nextIdeas[0]?.id ?? null)
-  }
-
-  function handleIdeaInput(event: FormEvent<HTMLDivElement>) {
-    forceLeftToRightEditor(event.currentTarget)
-    updateSelectedIdeaBody(event.currentTarget.innerHTML)
-  }
-
-  function formatIdea(event: MouseEvent<HTMLButtonElement>, action: FormatAction) {
-    event.preventDefault()
-    ideaEditorRef.current?.focus()
-    window.document.execCommand(action.command, false, action.value)
-    updateSelectedIdeaBody(ideaEditorRef.current?.innerHTML ?? '')
   }
 
   function selectNode(node: RoadmapNode) {
@@ -872,15 +776,9 @@ export function RoadmapEditor({
           : []
         : document.nodes
   const printMarkdown = printNodes.map((node) => nodeMarkdown(node, 1, printScope !== 'selected')).join('\n\n')
-  const printIdeasHtml = document.ideas
-    .map((idea) => `<article><h2>${idea.title}</h2>${sanitizeRichText(idea.bodyHtml)}</article>`)
-    .join('')
-  const printHtml = [
-    printIdeasHtml && printScope === 'all'
-      ? `<h1>Ideas y comentarios</h1><section class="ideas-print">${printIdeasHtml}</section>`
-      : '',
-    markdownToHtml(printMarkdown),
-  ].filter(Boolean).join('\n')
+  // Lo que se imprime es el roadmap. Las decisiones no entran aqui: se leen
+  // en su pantalla y se exportan a su fichero.
+  const printHtml = markdownToHtml(printMarkdown)
 
   function renderNode(node: RoadmapNode, depth = 0, parentId = '', index = 0) {
     if (!visibleIds.has(node.id)) return null
@@ -1023,102 +921,6 @@ export function RoadmapEditor({
     )
   }
 
-  function renderIdeasRepository() {
-    return (
-      <section className="ideas-repository no-print" aria-label="Ideas y comentarios">
-        <aside className="ideas-list-panel">
-          <div className="ideas-list-toolbar">
-            <div>
-              <h2>Ideas y comentarios</h2>
-              <span>{document.ideas.length} guardadas</span>
-            </div>
-            <input aria-label="Buscar ideas" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar ideas" type="search" value={query} />
-            <button aria-label="Nueva idea" className="icon-only" onClick={createIdea} title="Nueva idea" type="button">
-              <Icon name="plus" />
-            </button>
-          </div>
-          {filteredIdeas.length === 0 ? (
-            <p className="empty-state ideas-empty">No hay ideas que coincidan.</p>
-          ) : null}
-          <ul className="ideas-list">
-            {filteredIdeas.map((idea) => (
-              <li key={idea.id}>
-                <button
-                  className={selectedIdea?.id === idea.id ? 'active' : ''}
-                  onClick={() => setSelectedIdeaId(idea.id)}
-                  type="button"
-                >
-                  <strong>{idea.title || 'Idea sin titulo'}</strong>
-                  <span>{htmlToPlainText(idea.bodyHtml) || 'Sin contenido todavia'}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        <section className="idea-detail-panel">
-          {selectedIdea ? (
-            <>
-              <div className="idea-title-row">
-                <input
-                  aria-label="Titulo de la idea"
-                  onChange={(event) => updateIdea(selectedIdea.id, (idea) => ({ ...idea, title: event.target.value }))}
-                  value={selectedIdea.title}
-                />
-                <button
-                  aria-label="Eliminar idea"
-                  className="icon-only text-danger"
-                  onClick={() => deleteIdea(selectedIdea)}
-                  title="Eliminar idea"
-                  type="button"
-                >
-                  <Icon name="trash" />
-                </button>
-              </div>
-              <div className="rich-toolbar idea-toolbar" role="toolbar" aria-label="Formato de la idea">
-                {richTextActions.map((action) => (
-                  <button
-                    aria-label={action.label}
-                    className="icon-only secondary-button"
-                    key={`${action.command}-${action.value ?? ''}`}
-                    onMouseDown={(event) => formatIdea(event, action)}
-                    title={action.label}
-                    type="button"
-                  >
-                    <Icon name={action.icon} />
-                  </button>
-                ))}
-              </div>
-              <div
-                aria-label="Contenido de la idea"
-                className="idea-body-editor"
-                contentEditable
-                dir="ltr"
-                onBlur={(event) => {
-                  forceLeftToRightEditor(event.currentTarget)
-                  const html = sanitizeRichText(event.currentTarget.innerHTML)
-                  event.currentTarget.innerHTML = html
-                  updateSelectedIdeaBody(html)
-                }}
-                onFocus={(event) => forceLeftToRightEditor(event.currentTarget)}
-                onInput={handleIdeaInput}
-                ref={ideaEditorRef}
-                role="textbox"
-                suppressContentEditableWarning
-              />
-            </>
-          ) : (
-            <div className="idea-empty-detail">
-              <h2>Ideas y comentarios</h2>
-              <p className="empty-state">Crea una idea para guardar notas, comentarios o decisiones del arbol.</p>
-              <button onClick={createIdea} type="button"><Icon name="plus" /> Nueva idea</button>
-            </div>
-          )}
-        </section>
-      </section>
-    )
-  }
-
   return (
     <main className="roadmap-screen">
       <header className="roadmap-bar no-print">
@@ -1137,7 +939,7 @@ export function RoadmapEditor({
         <div className="mode-switch" role="group" aria-label="Vista del editor">
           <button className={editorMode === 'editor' ? 'active' : ''} onClick={() => setEditorMode('editor')} type="button"><Icon name="fileBranch" /> Editar</button>
           <button className={editorMode === 'canvas' ? 'active' : ''} onClick={() => setEditorMode('canvas')} type="button"><Icon name="gitMerge" /> Esquema</button>
-          <button className={editorMode === 'ideas' ? 'active' : ''} onClick={() => setEditorMode('ideas')} type="button"><Icon name="quote" /> Ideas</button>
+          <button className={editorMode === 'decisor' ? 'active' : ''} onClick={() => setEditorMode('decisor')} type="button"><Icon name="check" /> Decisiones</button>
         </div>
         <span className={`sync-state ${syncStatus}`} title={syncError || syncLabel(syncStatus)}>{syncLabel(syncStatus)}</span>
         <div className="toolbar-group">
@@ -1226,8 +1028,8 @@ export function RoadmapEditor({
               </div>
             </div>
           </section>
-      ) : editorMode === 'ideas' ? (
-        renderIdeasRepository()
+      ) : editorMode === 'decisor' ? (
+        <Decisor projectId={projectId} proyecto={document.project} />
       ) : (
         <section className="roadmap-body">
           <aside className="file-tree no-print">

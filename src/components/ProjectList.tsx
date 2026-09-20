@@ -318,6 +318,7 @@ export function ProjectList({ session }: ProjectListProps) {
           .filter((project) => project.id !== activeProject.id)
           .map((project) => ({ ...project, document: documentForProject(project) }))}
         document={normalizeDocument(activeProject.document, activeProject)}
+        projectId={activeProject.id}
         onBack={() => setActiveProjectId(null)}
         onChange={handleDocumentChange}
         onSignOut={() => supabaseClient.auth.signOut()}
