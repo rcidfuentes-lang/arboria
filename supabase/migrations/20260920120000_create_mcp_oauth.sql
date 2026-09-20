@@ -9,6 +9,14 @@
 -- razones: nunca se guarda una credencial, solo su SHA-256 en hexadecimal. Una
 -- copia de estas tablas no abre ninguna sesion y no lee ningun roadmap.
 --
+-- Cada funcion se retira de public, de anon y de authenticated antes de
+-- concederse a quien toca. Retirarla solo de public no basta: Supabase tiene
+-- puesto un ALTER DEFAULT PRIVILEGES que concede execute a anon y a
+-- authenticated sobre toda funcion nueva de public, y eso es una concesion
+-- directa a esos roles, no heredada de public. Sin este paso, anon podria
+-- llamar a la emision de codigos y cualquier usuario con sesion podria llamar
+-- a la lectura por token.
+--
 -- Las tres tienen RLS activada y ninguna politica. Eso no es un olvido: es la
 -- forma de decir que no se llega a ellas por PostgREST ni como anon ni como
 -- usuario autenticado. Todo el acceso pasa por las funciones security definer
@@ -155,7 +163,7 @@ begin
 end;
 $$;
 
-revoke all on function public.mcp_register_client(text, text[]) from public;
+revoke all on function public.mcp_register_client(text, text[]) from public, anon, authenticated;
 grant execute on function public.mcp_register_client(text, text[]) to anon;
 
 -- --------------------------------------------------------------------------
@@ -180,7 +188,7 @@ as $$
     and mcp_client_for_authorization.redirect_uri = any (c.redirect_uris)
 $$;
 
-revoke all on function public.mcp_client_for_authorization(uuid, text) from public;
+revoke all on function public.mcp_client_for_authorization(uuid, text) from public, anon, authenticated;
 grant execute on function public.mcp_client_for_authorization(uuid, text) to authenticated;
 
 -- El alta del codigo de autorizacion. La llama el navegador de Ruben con su
@@ -247,7 +255,7 @@ begin
 end;
 $$;
 
-revoke all on function public.mcp_issue_authorization_code(uuid, uuid, text, text, text, text) from public;
+revoke all on function public.mcp_issue_authorization_code(uuid, uuid, text, text, text, text) from public, anon, authenticated;
 grant execute on function public.mcp_issue_authorization_code(uuid, uuid, text, text, text, text) to authenticated;
 
 -- --------------------------------------------------------------------------
@@ -339,7 +347,7 @@ begin
 end;
 $$;
 
-revoke all on function public.mcp_exchange_authorization_code(text, uuid, text, text, text, text, integer) from public;
+revoke all on function public.mcp_exchange_authorization_code(text, uuid, text, text, text, text, integer) from public, anon, authenticated;
 grant execute on function public.mcp_exchange_authorization_code(text, uuid, text, text, text, text, integer) to anon;
 
 -- Renovacion con rotacion del refresh token, que es lo que la especificacion
@@ -414,7 +422,7 @@ begin
 end;
 $$;
 
-revoke all on function public.mcp_refresh_access_token(text, uuid, text, text, integer) from public;
+revoke all on function public.mcp_refresh_access_token(text, uuid, text, text, integer) from public, anon, authenticated;
 grant execute on function public.mcp_refresh_access_token(text, uuid, text, text, integer) to anon;
 
 -- --------------------------------------------------------------------------
@@ -445,5 +453,18 @@ as $$
   limit 1;
 $$;
 
-revoke all on function public.mcp_document_by_access_token(text) from public;
+revoke all on function public.mcp_document_by_access_token(text) from public, anon, authenticated;
 grant execute on function public.mcp_document_by_access_token(text) to anon;
+
+-- --------------------------------------------------------------------------
+-- La misma correccion, en la funcion que ya estaba
+-- --------------------------------------------------------------------------
+
+-- roadmap_document_by_key se retiro de public y se concedio a anon, que es lo
+-- que quiere decir "solo la llama el endpoint de lectura". Pero por el mismo
+-- ALTER DEFAULT PRIVILEGES de arriba, authenticated tambien la tenia. No es un
+-- agujero —hay que traer la clave igual— pero contradice lo que dice el grant,
+-- y lo que dice el grant es lo que se lee cuando alguien revisa esto dentro de
+-- un año. Se corrige aqui porque es la misma linea y el mismo descuido.
+revoke all on function public.roadmap_document_by_key(text) from public, anon, authenticated;
+grant execute on function public.roadmap_document_by_key(text) to anon;
