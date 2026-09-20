@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "verificar-api": "node scripts/verificar-api-roadmap.mjs",
     "verificar-mcp": "node scripts/verificar-mcp.mjs",
+    "verificar-import": "node scripts/verificar-import-decisiones.mjs",
     "verificar-esquema": "bash scripts/verificar-esquema.sh",
     "preview": "vite preview"
   },

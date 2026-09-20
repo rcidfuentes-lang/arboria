@@ -1747,6 +1747,14 @@ h2 {
   text-decoration: line-through;
 }
 
+.decisor-errores ul {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+
 .decisor-vacio {
   align-content: center;
   display: grid;
@@ -1880,7 +1888,15 @@ h2 {
     grid-template-rows: 42% 58%;
   }
 
-  .decisor {
+  .roadmap-title-fijo {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.decisor {
     grid-template-columns: 1fr;
     grid-template-rows: 38% 62%;
   }

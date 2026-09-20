@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { Icon } from './Icon'
 import {
   documentoDesdeFilas,
   stringifyDecisionesJson,
   temasSugeridos,
 } from '../lib/decisiones-document'
+import { ejemploDeFichero, leerFicheroDeDecisiones } from '../lib/decisiones-import'
+import type { PlanDeImportacion } from '../lib/decisiones-import'
 import { supabase } from '../lib/supabase'
 import type { DecisionFila, DecisionHistorialFila } from '../types/decisiones'
 
@@ -126,6 +129,12 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
   const [inactivando, setInactivando] = useState(false)
   const [motivoBaja, setMotivoBaja] = useState('')
   const [sustituta, setSustituta] = useState('')
+  const [importando, setImportando] = useState(false)
+  const [mostrarImport, setMostrarImport] = useState(false)
+  const [textoImport, setTextoImport] = useState('')
+  const [nombreFichero, setNombreFichero] = useState('')
+  const [erroresImport, setErroresImport] = useState<string[]>([])
+  const [plan, setPlan] = useState<PlanDeImportacion | null>(null)
 
   const cliente = supabase!
 
@@ -334,6 +343,76 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     cargar()
   }
 
+  function abrirImport() {
+    setMostrarImport(true)
+    setTextoImport('')
+    setNombreFichero('')
+    setErroresImport([])
+    setPlan(null)
+    setError('')
+    setAviso('')
+  }
+
+  /**
+   * Leer el fichero no escribe nada: deja el plan a la vista para que Ruben
+   * vea que va a entrar antes de que entre. Los errores salen todos juntos,
+   * que es lo que sirve cuando el fichero se ha escrito a mano.
+   */
+  function revisar(texto: string) {
+    setTextoImport(texto)
+    setErroresImport([])
+    setPlan(null)
+    if (!texto.trim()) return
+
+    const leido = leerFicheroDeDecisiones(
+      texto,
+      decisiones.map((fila) => ({
+        numero: fila.numero,
+        decidido: fila.decidido,
+        fecha: fila.fecha,
+      })),
+    )
+    if (leido.ok) setPlan(leido.plan)
+    else setErroresImport(leido.errores)
+  }
+
+  async function tomarFichero(evento: ChangeEvent<HTMLInputElement>) {
+    const fichero = evento.target.files?.[0]
+    if (!fichero) return
+    setNombreFichero(fichero.name)
+    revisar(await fichero.text())
+  }
+
+  async function importar() {
+    if (!plan) return
+    setImportando(true)
+    setErroresImport([])
+
+    // Una sola llamada: la base mete el fichero entero en una transaccion, con
+    // sus altas y sus inactivaciones, o no mete nada.
+    const { data, error: fallo } = await cliente.rpc('importar_decisiones', {
+      proyecto: projectId,
+      entradas: plan.entradas,
+    })
+
+    setImportando(false)
+    if (fallo) {
+      setErroresImport([`No se ha importado nada. ${fallo.message}`])
+      return
+    }
+
+    const resumen = (data ?? {}) as { escritas?: number; omitidas?: number; inactivadas?: number }
+    setMostrarImport(false)
+    setSeleccionada(null)
+    setEscribiendoNueva(false)
+    setAviso(
+      `Importadas ${resumen.escritas ?? 0}` +
+        `${resumen.inactivadas ? `, ${resumen.inactivadas} inactivadas` : ''}` +
+        `${resumen.omitidas ? `, ${resumen.omitidas} ya estaban y se han dejado como estaban` : ''}.`,
+    )
+    cargar()
+  }
+
   function exportar() {
     const documento = documentoDesdeFilas(decisiones, proyecto, historial)
     descargar(`${proyecto.id || 'proyecto'}-decisiones.json`, stringifyDecisionesJson(documento))
@@ -369,6 +448,15 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
           />
           <button aria-label="Nueva decision" className="icon-only" onClick={abrirNueva} title="Nueva decision" type="button">
             <Icon name="plus" />
+          </button>
+          <button
+            aria-label="Importar decisiones"
+            className="icon-only secondary-button"
+            onClick={abrirImport}
+            title="Importar decisiones de un fichero"
+            type="button"
+          >
+            <Icon name="upload" />
           </button>
           <button
             aria-label="Exportar decisiones"
@@ -627,6 +715,86 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
           </>
         ) : null}
       </section>
+
+      {mostrarImport ? (
+        <div className="modal-backdrop">
+          <section className="modal">
+            <h2>Importar decisiones</h2>
+            <p className="modal-hint">
+              Un fichero JSON que traes tu. No borra ni pisa nada: lo que ya este
+              escrito se queda como esta. Si el fichero tiene un fallo no entra nada,
+              y aqui abajo pone cual.
+            </p>
+
+            <label className="decisor-campo">
+              Fichero
+              <input accept="application/json,.json" onChange={tomarFichero} type="file" />
+            </label>
+            {nombreFichero ? <p className="muted">{nombreFichero}</p> : null}
+
+            <details className="json-example">
+              <summary>Ver el formato, con un ejemplo</summary>
+              <p className="modal-hint">
+                Obligatorios: <code>decidido</code>, <code>fecha</code> (AAAA-MM-DD),{' '}
+                <code>motivo</code> y <code>tema</code>. Opcionales: <code>detalle</code> y{' '}
+                <code>nodo</code>. Para retirar una decision, <code>inactiva</code> con su{' '}
+                <code>motivo</code> y <code>sustituida_por</code>, que es el{' '}
+                <code>ref</code> de otra entrada del mismo fichero o el numero de una
+                decision ya escrita.
+              </p>
+              <pre>{ejemploDeFichero}</pre>
+              <button className="secondary-button" onClick={() => revisar(ejemploDeFichero)} type="button">
+                <Icon name="copy" /> Usar el ejemplo
+              </button>
+            </details>
+
+            <label className="decisor-campo">
+              O pegalo aqui
+              <textarea
+                aria-label="Pegar el fichero de decisiones"
+                onChange={(evento) => revisar(evento.target.value)}
+                rows={8}
+                value={textoImport}
+              />
+            </label>
+
+            {erroresImport.length > 0 ? (
+              <div className="decisor-errores">
+                <p className="form-error">No se importa nada. Hay {erroresImport.length} cosa(s) que arreglar:</p>
+                <ul>
+                  {erroresImport.map((mensaje) => (
+                    <li key={mensaje}>{mensaje}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {plan ? (
+              <div className="decisor-aviso">
+                <p>
+                  Se escribiran <strong>{plan.nuevas}</strong> decision(es)
+                  {plan.inactivaciones > 0 ? `, ${plan.inactivaciones} de ellas inactivas` : ''}.
+                </p>
+                {plan.yaEstaban.length > 0 ? (
+                  <p className="muted">
+                    {plan.yaEstaban.length} ya estaban escritas y se dejan como estan:{' '}
+                    {plan.yaEstaban.map((fila) => `la ${fila.numero}`).join(', ')}.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="modal-actions">
+              <button disabled={!plan || importando || plan.nuevas === 0} onClick={importar} type="button">
+                {importando ? 'Importando...' : 'Importar'}
+              </button>
+              <button className="secondary-button" onClick={() => setMostrarImport(false)} type="button">
+                Cancelar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   )
 }
