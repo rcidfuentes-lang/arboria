@@ -921,41 +921,58 @@ export function RoadmapEditor({
     )
   }
 
+  // Lo del arbol solo se ve con el arbol delante. Un boton que exporta una
+  // rama o imprime el roadmap, con las decisiones abiertas, no es un boton de
+  // mas: es un boton que dice que hace otra cosa de la que hace.
+  const enElArbol = editorMode !== 'decisor'
+
   return (
     <main className="roadmap-screen">
       <header className="roadmap-bar no-print">
         <div className="roadmap-title">
           <img src="/arboria-logo.png" alt="" />
-          <input
-            aria-label="Nombre del proyecto"
-            onChange={(event) => onChange({ ...document, project: { ...document.project, name: event.target.value } })}
-            value={document.project.name}
-          />
+          {enElArbol ? (
+            <input
+              aria-label="Nombre del proyecto"
+              onChange={(event) => onChange({ ...document, project: { ...document.project, name: event.target.value } })}
+              value={document.project.name}
+            />
+          ) : (
+            // El nombre se lee en las tres vistas, pero se escribe donde se
+            // escribe el documento del roadmap, que es donde vive.
+            <strong className="roadmap-title-fijo">{document.project.name}</strong>
+          )}
         </div>
-        <span className="project-progress" title={`${projectProgress}% completado`}>
-          <span style={{ width: `${projectProgress}%` }} />
-          <strong>{projectProgress}%</strong>
-        </span>
+        {enElArbol ? (
+          <span className="project-progress" title={`${projectProgress}% completado`}>
+            <span style={{ width: `${projectProgress}%` }} />
+            <strong>{projectProgress}%</strong>
+          </span>
+        ) : null}
         <div className="mode-switch" role="group" aria-label="Vista del editor">
           <button className={editorMode === 'editor' ? 'active' : ''} onClick={() => setEditorMode('editor')} type="button"><Icon name="fileBranch" /> Editar</button>
           <button className={editorMode === 'canvas' ? 'active' : ''} onClick={() => setEditorMode('canvas')} type="button"><Icon name="gitMerge" /> Esquema</button>
           <button className={editorMode === 'decisor' ? 'active' : ''} onClick={() => setEditorMode('decisor')} type="button"><Icon name="check" /> Decisiones</button>
         </div>
-        <span className={`sync-state ${syncStatus}`} title={syncError || syncLabel(syncStatus)}>{syncLabel(syncStatus)}</span>
-        <div className="toolbar-group">
-          <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
-          <button className="secondary-button" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /> Importar JSON</button>
-          <button aria-label="Exportar proyecto" className="icon-only secondary-button" onClick={exportProject} title="Exportar proyecto" type="button"><Icon name="download" /></button>
-          <button aria-label="Exportar rama" className="icon-only secondary-button" onClick={exportBranch} title="Exportar rama" type="button"><Icon name="fileBranch" /></button>
-          <button aria-label="Imprimir" className="icon-only secondary-button" onClick={() => setShowPrint(true)} title="Imprimir" type="button"><Icon name="printer" /></button>
-        </div>
+        {enElArbol ? (
+          <>
+            <span className={`sync-state ${syncStatus}`} title={syncError || syncLabel(syncStatus)}>{syncLabel(syncStatus)}</span>
+            <div className="toolbar-group">
+              <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
+              <button className="secondary-button" onClick={() => openImport('replace-project')} title="Importar JSON" type="button"><Icon name="upload" /> Importar JSON</button>
+              <button aria-label="Exportar proyecto" className="icon-only secondary-button" onClick={exportProject} title="Exportar proyecto" type="button"><Icon name="download" /></button>
+              <button aria-label="Exportar rama" className="icon-only secondary-button" onClick={exportBranch} title="Exportar rama" type="button"><Icon name="fileBranch" /></button>
+              <button aria-label="Imprimir" className="icon-only secondary-button" onClick={() => setShowPrint(true)} title="Imprimir" type="button"><Icon name="printer" /></button>
+            </div>
+          </>
+        ) : null}
         <div className="toolbar-group">
           <button aria-label="Volver a proyectos" className="icon-only secondary-button" onClick={onBack} title="Proyectos" type="button"><Icon name="folderOpen" /></button>
           <button aria-label="Cerrar sesion" className="icon-only secondary-button" onClick={onSignOut} title="Cerrar sesion" type="button"><Icon name="logOut" /></button>
         </div>
       </header>
 
-      {errorMessage ? <p className="form-error no-print">{errorMessage}</p> : null}
+      {errorMessage && enElArbol ? <p className="form-error no-print">{errorMessage}</p> : null}
 
       {editorMode === 'canvas' ? (
         <section className="branch-canvas-panel full-screen no-print" aria-label="Editor visual de ramas">
@@ -1204,7 +1221,11 @@ export function RoadmapEditor({
         </div>
       ) : null}
 
-      <section className="print-surface" dangerouslySetInnerHTML={{ __html: printHtml }} />
+      {/* Imprimir desde el navegador con las decisiones delante sacaba el
+          roadmap, porque esta superficie es lo unico que no lleva no-print. */}
+      {enElArbol ? (
+        <section className="print-surface" dangerouslySetInnerHTML={{ __html: printHtml }} />
+      ) : null}
     </main>
   )
 }

@@ -1486,6 +1486,14 @@ h2 {
   resize: none;
 }
 
+.roadmap-title-fijo {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .decisor {
   display: grid;
   grid-template-columns: minmax(300px, 36%) minmax(0, 1fr);
