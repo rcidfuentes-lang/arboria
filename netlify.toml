@@ -5,13 +5,54 @@
 [functions]
   directory = "netlify/functions"
 
-# El endpoint de lectura del roadmap. Va antes del comodin de la SPA porque
-# las redirecciones se resuelven en orden y la primera que casa gana: sin esta
-# linea, /api/roadmap devolveria el index.html de la aplicacion.
+# Las redirecciones se resuelven en orden y la primera que casa gana. Todas las
+# rutas de funcion van antes del comodin de la SPA porque, sin ellas, cualquiera
+# de estas direcciones devolveria el index.html de la aplicacion.
+
+# El endpoint de lectura del roadmap con clave Bearer. Songplay lo usa.
 [[redirects]]
   from = "/api/roadmap"
   to = "/.netlify/functions/roadmap"
   status = 200
+
+# Descubrimiento del recurso protegido (RFC 9728). En las dos rutas que un
+# cliente puede probar: la de la raiz y la que lleva detras el camino del
+# recurso, /mcp.
+[[redirects]]
+  from = "/.well-known/oauth-protected-resource"
+  to = "/.netlify/functions/oauth-recurso"
+  status = 200
+
+[[redirects]]
+  from = "/.well-known/oauth-protected-resource/*"
+  to = "/.netlify/functions/oauth-recurso"
+  status = 200
+
+# Descubrimiento del servidor de autorizacion (RFC 8414). Igual: la ruta de la
+# raiz y la variante con el camino detras.
+[[redirects]]
+  from = "/.well-known/oauth-authorization-server"
+  to = "/.netlify/functions/oauth-metadatos"
+  status = 200
+
+[[redirects]]
+  from = "/.well-known/oauth-authorization-server/*"
+  to = "/.netlify/functions/oauth-metadatos"
+  status = 200
+
+# Registro dinamico de clientes y emision de tokens.
+[[redirects]]
+  from = "/oauth/registro"
+  to = "/.netlify/functions/oauth-registro"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/token"
+  to = "/.netlify/functions/oauth-token"
+  status = 200
+
+# /oauth/autorizar no aparece aqui a proposito: es una pantalla de la
+# aplicacion, y la sirve el comodin de abajo como cualquier otra ruta de la SPA.
 
 [[redirects]]
   from = "/*"
