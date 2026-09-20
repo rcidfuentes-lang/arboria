@@ -1,4 +1,5 @@
 import { normalizeRoadmapDocument } from '../../src/lib/roadmap-document.ts'
+import { ErrorDeRpc, llamarRpc } from './supabase-rpc.ts'
 import type { RoadmapDocument } from '../../src/types/roadmap'
 
 /**
@@ -45,42 +46,23 @@ function esDocumento(value: unknown): value is { schemaVersion: 1; nodes: unknow
 }
 
 /**
- * Llama a una funcion RPC de Supabase con la clave anonima —que ya es publica
- * en el bundle desplegado— y devuelve el documento normalizado.
+ * Llama a una funcion RPC de Supabase y devuelve el documento normalizado.
  *
- * Nunca se usa la clave de servicio: todas las funciones que se llaman desde
- * aqui son security definer con un alcance de exactamente un documento.
+ * La credencial que abre el documento es un argumento de la funcion que se
+ * llame: la clave de lectura en /api/roadmap, el token de acceso en el
+ * conector MCP. Lo que pasa despues es lo mismo en los dos casos.
  */
 export async function documentoDesdeRpc(
   funcion: string,
   argumentos: Record<string, unknown>,
 ): Promise<RoadmapDocument> {
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const supabaseKey =
-    process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY
-  if (!supabaseUrl || !supabaseKey) throw new ErrorDeLectura('server_not_configured')
-
-  let respuesta: Response
-  try {
-    respuesta = await fetch(`${supabaseUrl}/rest/v1/rpc/${funcion}`, {
-      method: 'POST',
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(argumentos),
-    })
-  } catch {
-    throw new ErrorDeLectura('roadmap_lookup_failed')
-  }
-
-  if (!respuesta.ok) throw new ErrorDeLectura('roadmap_lookup_failed')
-
   let almacenado: unknown
   try {
-    almacenado = await respuesta.json()
-  } catch {
+    almacenado = await llamarRpc(funcion, argumentos)
+  } catch (error) {
+    if (error instanceof ErrorDeRpc && error.motivo === 'no_configurado') {
+      throw new ErrorDeLectura('server_not_configured')
+    }
     throw new ErrorDeLectura('roadmap_lookup_failed')
   }
 
