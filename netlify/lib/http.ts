@@ -3,6 +3,7 @@
  * cabecera Authorization y generacion de credenciales.
  */
 import { createHash, randomBytes } from 'node:crypto'
+import { origenDe } from '../../src/lib/mcp-conector.ts'
 
 /**
  * Claude se conecta desde sus servidores, sin navegador, y ahi CORS no pinta
@@ -18,6 +19,23 @@ export const CORS: Record<string, string> = {
     'authorization, content-type, mcp-protocol-version, mcp-method, mcp-name, mcp-session-id, last-event-id',
   'Access-Control-Expose-Headers': 'www-authenticate, mcp-protocol-version',
   'Access-Control-Max-Age': '86400',
+}
+
+/**
+ * El origen publico de Arboria, que es la identidad del servidor de
+ * autorizacion y la del recurso protegido. Sale de la peticion, no de una
+ * constante: asi el conector funciona igual en produccion, en un despliegue de
+ * prueba y en local sin que haya una direccion que actualizar en dos sitios.
+ *
+ * Netlify llega aqui por una reescritura, que cambia el camino pero no el
+ * protocolo ni el host, que es lo unico que se mira. Si algun dia eso dejara
+ * de ser cierto, ARBORIA_ORIGEN lo arregla sin tocar codigo. No se lee ninguna
+ * cabecera reenviada: quien llama podria ponerla, y de ahi sale el emisor.
+ */
+export function origenPublico(request: Request): string {
+  const configurado = process.env.ARBORIA_ORIGEN
+  if (configurado) return configurado.trim().replace(/\/+$/, '')
+  return origenDe(request.url)
 }
 
 export function json(cuerpo: unknown, estado = 200, extra: Record<string, string> = {}): Response {

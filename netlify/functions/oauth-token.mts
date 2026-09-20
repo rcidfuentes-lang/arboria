@@ -16,9 +16,17 @@
  * una sola sentencia. Aqui no se decide nada de eso: esta funcion genera
  * credenciales, pregunta, y traduce un null a invalid_grant.
  */
-import { ES_UUID, credencial, cuerpoDeFormulario, json, preflight, sha256Hex } from '../lib/http.ts'
+import {
+  ES_UUID,
+  credencial,
+  cuerpoDeFormulario,
+  json,
+  origenPublico,
+  preflight,
+  sha256Hex,
+} from '../lib/http.ts'
 import { ErrorDeRpc, llamarRpc } from '../lib/supabase-rpc.ts'
-import { ALCANCE, origenDe, recursoAceptado } from '../../src/lib/mcp-conector.ts'
+import { ALCANCE, recursoAceptado } from '../../src/lib/mcp-conector.ts'
 
 /** Una hora. Corto a proposito: un token filtrado deja de valer solo. */
 const VIDA_DEL_TOKEN = 3600
@@ -34,7 +42,7 @@ export default async (request: Request): Promise<Response> => {
   }
 
   const campos = await cuerpoDeFormulario(request)
-  const origen = origenDe(request.url)
+  const origen = origenPublico(request)
 
   const clientId = campos.client_id ?? ''
   if (!ES_UUID.test(clientId)) {

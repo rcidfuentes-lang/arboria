@@ -21,14 +21,10 @@
  * peticion se basta sola. Es lo que pide la revision de 2026 y lo que la
  * anterior permite.
  */
-import { CORS, bearerDe, json, preflight } from '../lib/http.ts'
+import { CORS, bearerDe, json, origenPublico, preflight } from '../lib/http.ts'
 import { ErrorDeLectura, documentoDesdeRpc } from '../lib/roadmap-lectura.ts'
 import { RichTextUnavailableError } from '../../src/lib/roadmap-document.ts'
-import {
-  ALCANCE,
-  RUTA_METADATOS_RECURSO,
-  origenDe,
-} from '../../src/lib/mcp-conector.ts'
+import { ALCANCE, RUTA_METADATOS_RECURSO } from '../../src/lib/mcp-conector.ts'
 import {
   CLAVE_VERSION,
   VERSIONES,
@@ -101,7 +97,7 @@ function responder(salida: Salida, version: string): Response {
 }
 
 export default async (request: Request): Promise<Response> => {
-  const origen = origenDe(request.url)
+  const origen = origenPublico(request)
 
   if (request.method === 'OPTIONS') return preflight()
 

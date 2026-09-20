@@ -399,6 +399,37 @@ console.log('\nDescubrimiento')
       JSON.stringify(['authorization_code', 'refresh_token']),
   )
   comprobar('registro dinamico anunciado', servidor.registration_endpoint === `${ORIGEN}/oauth/registro`)
+
+  // Netlify sirve estos metadatos tambien con el camino del recurso detras,
+  // porque el cliente puede probar cualquiera de las dos rutas.
+  const conCamino = await (await endpointRecurso(
+    new Request(`${ORIGEN}/.well-known/oauth-protected-resource/mcp`),
+  )).json()
+  comprobar('los metadatos valen igual en la ruta con /mcp detras', conCamino.resource === RECURSO)
+
+  const previo = await endpointMcp(new Request(RECURSO, { method: 'OPTIONS' }))
+  comprobar(
+    'el preflight de CORS deja pasar las cabeceras del protocolo',
+    previo.status === 204 &&
+      (previo.headers.get('Access-Control-Allow-Headers') ?? '').includes('mcp-protocol-version'),
+    String(previo.status),
+  )
+
+  const expuesto = previo.headers.get('Access-Control-Expose-Headers') ?? ''
+  comprobar('y expone WWW-Authenticate, que es por donde arranca OAuth',
+    expuesto.includes('www-authenticate'), expuesto)
+}
+
+console.log('\nOrigin: solo desde donde tiene sentido')
+{
+  const ajeno = await pedirMcp({ origen: 'https://pagina.invalido', token: 'x', ...legado('tools/list', {}) })
+  comprobar('un Origin de otra pagina: 403', ajeno.status === 403, String(ajeno.status))
+
+  const claude = await pedirMcp({ origen: 'https://claude.ai', ...legado('initialize', {}) })
+  comprobar('claude.ai pasa y se queda en el 401 de siempre', claude.status === 401, String(claude.status))
+
+  const inspector = await pedirMcp({ origen: 'http://localhost:6274', ...legado('initialize', {}) })
+  comprobar('y el inspector en local tambien', inspector.status === 401, String(inspector.status))
 }
 
 console.log('\nSin token no se entra')
