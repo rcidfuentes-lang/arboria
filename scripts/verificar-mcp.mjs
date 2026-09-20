@@ -87,12 +87,51 @@ const clientes = new Map() // client_id -> { client_name, redirect_uris, created
 const codigos = new Map() // code_hash -> fila
 const tokens = [] // filas
 const clavesDeLectura = new Map() // key_hash -> project_id
+const decisiones = new Map() // project_id -> [filas]
+const rastro = new Map() // decision_id -> [correcciones]
 
 const RUBEN = randomUUID()
 const PROYECTO_SONGPLAY = randomUUID()
 const PROYECTO_OTRO = randomUUID()
 proyectos.set(PROYECTO_SONGPLAY, { documento: SONGPLAY, owner_id: RUBEN })
 proyectos.set(PROYECTO_OTRO, { documento: OTRO, owner_id: RUBEN })
+
+// Tres decisiones de Songplay: dos activas y una inactiva sustituida por otra,
+// y una de las activas con una correccion encima. Es el minimo que ejercita
+// toda la forma del documento: numeracion, inactivacion por numero y rastro.
+const D1 = randomUUID()
+const D2 = randomUUID()
+const D3 = randomUUID()
+decisiones.set(PROYECTO_SONGPLAY, [
+  {
+    id: D1, numero: 1, decidido: 'El decisor va en tabla propia.',
+    fecha: '2026-09-20', motivo: 'Los bytes de /api/roadmap no se tocan.',
+    tema: 'arquitectura', detalle: null, nodo_id: null, estado: 'inactiva',
+    motivo_inactivacion: 'La 3 lo dice mejor.', sustituida_por: D3,
+    created_at: '2026-09-20T10:00:00+00:00', updated_at: '2026-09-20T11:00:00+00:00',
+  },
+  {
+    id: D2, numero: 2, decidido: 'Las decisiones no se borran.',
+    fecha: '2026-09-20', motivo: 'Una decision retirada sigue explicando el pasado.',
+    tema: 'proceso', detalle: 'acta del 20', nodo_id: 'SP', estado: 'activa',
+    motivo_inactivacion: null, sustituida_por: null,
+    created_at: '2026-09-20T10:05:00+00:00', updated_at: '2026-09-20T12:00:00+00:00',
+  },
+  {
+    id: D3, numero: 3, decidido: 'Tabla propia, con clave ajena a la sustituta.',
+    fecha: '2026-09-20', motivo: 'Asi la sustituta existe de verdad.',
+    tema: 'arquitectura', detalle: null, nodo_id: null, estado: 'activa',
+    motivo_inactivacion: null, sustituida_por: null,
+    created_at: '2026-09-20T10:10:00+00:00', updated_at: '2026-09-20T10:10:00+00:00',
+  },
+])
+rastro.set(D1, [
+  { campo: 'estado', antes: 'activa', despues: 'inactiva', cambiado_el: '2026-09-20T11:00:00+00:00' },
+])
+rastro.set(D2, [
+  { campo: 'decidido', antes: 'No se borran.', despues: 'Las decisiones no se borran.',
+    cambiado_el: '2026-09-20T12:00:00+00:00' },
+])
 
 const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -272,12 +311,68 @@ function roadmap_document_by_key({ api_key }) {
   return comoJsonb(proyectos.get(project_id).documento)
 }
 
+/** Lo que arma decisiones_de_proyecto en la migracion, paso por paso. */
+function documentoDeDecisiones(project_id) {
+  const proyecto = proyectos.get(project_id)
+  if (!proyecto) return null
+  const filas = [...(decisiones.get(project_id) ?? [])].sort((a, b) => a.numero - b.numero)
+  const numeroDe = new Map(filas.map((fila) => [fila.id, fila.numero]))
+  return comoJsonb({
+    project: {
+      id: proyecto.documento.project.id,
+      name: proyecto.documento.project.name,
+    },
+    decisiones: filas.map((fila) => ({
+      numero: fila.numero,
+      decidido: fila.decidido,
+      fecha: fila.fecha,
+      motivo: fila.motivo,
+      tema: fila.tema,
+      detalle: fila.detalle,
+      nodo: fila.nodo_id,
+      estado: fila.estado,
+      inactivacion:
+        fila.estado === 'inactiva'
+          ? {
+              motivo: fila.motivo_inactivacion,
+              sustituida_por: numeroDe.get(fila.sustituida_por) ?? null,
+            }
+          : null,
+      escrita_el: fila.created_at,
+      corregida_el: fila.updated_at > fila.created_at ? fila.updated_at : null,
+      correcciones: [...(rastro.get(fila.id) ?? [])].map((c) => ({
+        campo: c.campo,
+        antes: c.antes,
+        despues: c.despues,
+        cuando: c.cambiado_el,
+      })),
+    })),
+  })
+}
+
+function mcp_decisiones_by_access_token({ access_token }) {
+  const hash = sha(access_token ?? '')
+  const fila = tokens.find(
+    (t) => t.access_token_hash === hash && t.revoked_at === null && t.access_expires_at > AHORA,
+  )
+  if (!fila) return null
+  return documentoDeDecisiones(fila.project_id)
+}
+
+function decisiones_by_key({ api_key }) {
+  const project_id = clavesDeLectura.get(sha(api_key ?? ''))
+  if (!project_id) return null
+  return documentoDeDecisiones(project_id)
+}
+
 const FUNCIONES = {
   mcp_register_client,
   mcp_exchange_authorization_code,
   mcp_refresh_access_token,
   mcp_document_by_access_token,
   roadmap_document_by_key,
+  mcp_decisiones_by_access_token,
+  decisiones_by_key,
 }
 
 let rpcLlamadas = []
@@ -307,6 +402,7 @@ const endpointRegistro = await cargar('oauth-registro.mts')
 const endpointToken = await cargar('oauth-token.mts')
 const endpointMcp = await cargar('mcp.mts')
 const endpointRoadmap = await cargar('roadmap.mts')
+const endpointDecisiones = await cargar('decisiones.mts')
 
 const { HERRAMIENTAS } = await import(
   pathToFileURL(new URL('../netlify/lib/mcp-servidor.ts', import.meta.url).pathname).href
@@ -669,16 +765,20 @@ console.log('\nLas dos eras del protocolo')
 
 console.log('\nLas herramientas')
 {
-  comprobar('hay exactamente dos', HERRAMIENTAS.length === 2, String(HERRAMIENTAS.length))
+  comprobar('hay exactamente tres', HERRAMIENTAS.length === 3, String(HERRAMIENTAS.length))
   comprobar(
-    'y las dos leen',
+    'y las tres leen',
     HERRAMIENTAS.every((h) => h.name.startsWith('leer_')),
     HERRAMIENTAS.map((h) => h.name).join(', '),
   )
 
   const listado = await pedirMcp({ token: ACCESO, ...legado('tools/list', {}) })
   const nombres = (await listado.json()).result.tools.map((h) => h.name)
-  comprobar('tools/list devuelve esas dos', JSON.stringify(nombres) === '["leer_roadmap","leer_nodo"]')
+  comprobar(
+    'tools/list devuelve esas tres',
+    JSON.stringify(nombres) === '["leer_roadmap","leer_nodo","leer_decisiones"]',
+    nombres.join(', '),
+  )
 
   const inventada = await pedirMcp({
     token: ACCESO,
@@ -821,6 +921,89 @@ console.log('\nCaducidad y renovacion')
   comprobar('un refresh token con otro client_id: invalid_grant', ajeno.status === 400)
 }
 
+console.log('\nEl decisor')
+{
+  // Token recien emitido: los bloques de rotacion de arriba dejan ACCESO
+  // revocado a proposito, y adelantan el reloj simulado.
+  const nuevoToken = async (proyecto = PROYECTO_SONGPLAY) => {
+    const { codigo, verificador } = await autorizar({ proyecto })
+    const emitido = await (
+      await formulario({
+        grant_type: 'authorization_code',
+        code: codigo,
+        client_id: CLIENTE.client_id,
+        redirect_uri: RETORNO,
+        code_verifier: verificador,
+      })
+    ).json()
+    return emitido.access_token
+  }
+
+  const DEL_DECISOR = await nuevoToken()
+
+  const leer = async (argumentos) => {
+    const respuesta = await pedirMcp({
+      token: DEL_DECISOR,
+      ...legado('tools/call', { name: 'leer_decisiones', arguments: argumentos }),
+    })
+    const cuerpo = await respuesta.json()
+    if (!cuerpo.result) throw new Error(`sin result: ${JSON.stringify(cuerpo)}`)
+    const resultado = cuerpo.result
+    return { texto: resultado.content[0].text, esError: resultado.isError === true }
+  }
+
+  const todas = await leer({})
+  const documento = JSON.parse(todas.texto)
+  comprobar('sin filtros vienen las tres', documento.decisiones.length === 3)
+  comprobar('y en orden de numero',
+    documento.decisiones.map((d) => d.numero).join(',') === '1,2,3')
+  comprobar('con el proyecto al que da acceso el token',
+    documento.project.id === SONGPLAY.project.id, documento.project.id)
+  comprobar('schemaVersion lo pone el normalizador', documento.schemaVersion === 1)
+
+  const inactiva = documento.decisiones[0]
+  comprobar('la inactiva dice por que se quito y quien la sustituye, por numero',
+    inactiva.estado === 'inactiva' &&
+      inactiva.inactivacion.sustituida_por === 3 &&
+      inactiva.inactivacion.motivo === 'La 3 lo dice mejor.')
+  comprobar('una activa no arrastra inactivacion',
+    documento.decisiones[1].inactivacion === null)
+  comprobar('la corregida dice lo que decia antes',
+    documento.decisiones[1].correcciones.length === 1 &&
+      documento.decisiones[1].correcciones[0].antes === 'No se borran.')
+  comprobar('y cuando se toco por ultima vez',
+    documento.decisiones[1].corregida_el !== null &&
+      documento.decisiones[2].corregida_el === null)
+
+  const porTema = JSON.parse((await leer({ tema: 'ARQUITECTURA' })).texto)
+  comprobar('el filtro por tema no distingue mayusculas',
+    porTema.decisiones.map((d) => d.numero).join(',') === '1,3')
+
+  const activas = JSON.parse((await leer({ estado: 'activa' })).texto)
+  comprobar('el filtro por estado deja solo las activas',
+    activas.decisiones.map((d) => d.numero).join(',') === '2,3')
+
+  const una = JSON.parse((await leer({ numero: 2 })).texto)
+  comprobar('el filtro por numero deja una', una.decisiones.length === 1 &&
+    una.decisiones[0].numero === 2)
+
+  const ninguna = JSON.parse((await leer({ tema: 'lo-que-sea' })).texto)
+  comprobar('un tema que no existe devuelve la lista vacia, no un error',
+    ninguna.decisiones.length === 0)
+
+  const malEstado = await leer({ estado: 'dudosa' })
+  comprobar('un estado inventado se contesta con isError y el motivo', malEstado.esError)
+
+  const respuestaAjena = await pedirMcp({
+    token: await nuevoToken(PROYECTO_OTRO),
+    ...legado('tools/call', { name: 'leer_decisiones', arguments: {} }),
+  })
+  const otroProyecto = JSON.parse((await respuestaAjena.json()).result.content[0].text)
+  comprobar('un token de otro proyecto no ve estas decisiones',
+    otroProyecto.decisiones.length === 0 && otroProyecto.project.id !== SONGPLAY.project.id,
+    otroProyecto.project.id)
+}
+
 console.log('\nNada escribe')
 {
   rpcLlamadas = []
@@ -842,20 +1025,36 @@ console.log('\nNada escribe')
     legado('tools/list', {}),
     legado('tools/call', { name: 'leer_roadmap', arguments: {} }),
     legado('tools/call', { name: 'leer_nodo', arguments: { id: 'SP' } }),
+    legado('tools/call', { name: 'leer_decisiones', arguments: {} }),
     moderno('server/discover', {}),
     moderno('tools/call', { name: 'leer_roadmap', arguments: {} }),
+    moderno('tools/call', { name: 'leer_decisiones', arguments: { estado: 'activa' } }),
   ]) {
     await pedirMcp({ token, ...peticion })
   }
 
+  // La lista es cerrada y se escribe aqui a mano: si alguien anadiera una
+  // llamada a otra funcion de la base desde /mcp, esta prueba lo dice.
+  const LECTURAS = new Set(['mcp_document_by_access_token', 'mcp_decisiones_by_access_token'])
   comprobar(
-    'todo /mcp pasa por una sola funcion de la base, y es de lectura',
-    new Set(rpcLlamadas).size === 1 && rpcLlamadas[0] === 'mcp_document_by_access_token',
+    'todo /mcp pasa solo por funciones de lectura de la base',
+    rpcLlamadas.every((nombre) => LECTURAS.has(nombre)),
     [...new Set(rpcLlamadas)].join(', '),
+  )
+  comprobar(
+    'listar herramientas no va a buscar las decisiones',
+    !rpcLlamadas
+      .slice(0, 2)
+      .includes('mcp_decisiones_by_access_token'),
   )
   comprobar(
     'el documento guardado no ha cambiado',
     JSON.stringify(proyectos.get(PROYECTO_SONGPLAY).documento) === JSON.stringify(SONGPLAY),
+  )
+  comprobar(
+    'y las decisiones guardadas tampoco',
+    JSON.stringify(decisiones.get(PROYECTO_SONGPLAY)).includes('El decisor va en tabla propia.') &&
+      decisiones.get(PROYECTO_SONGPLAY).length === 3,
   )
 }
 
@@ -902,6 +1101,44 @@ console.log('\nLa API con clave Bearer sigue igual')
 
   const conClaveEnMcp = await pedirMcp({ token: clave, ...legado('tools/list', {}) })
   comprobar('y una clave de lectura no abre el conector', conClaveEnMcp.status === 401)
+
+  // --- El decisor, por las mismas dos vias y con las mismas credenciales.
+  const decisionesPorClave = await endpointDecisiones(
+    new Request(`${ORIGEN}/api/decisiones`, { headers: { Authorization: `Bearer ${clave}` } }),
+  )
+  const bytesDelDecisorApi = await decisionesPorClave.text()
+  comprobar('/api/decisiones contesta 200 con la misma clave', decisionesPorClave.status === 200)
+
+  const decisionesPorMcp = await pedirMcp({
+    token: emitido.access_token,
+    ...legado('tools/call', { name: 'leer_decisiones', arguments: {} }),
+  })
+  const bytesDelDecisorMcp = (await decisionesPorMcp.json()).result.content[0].text
+
+  console.log(`       /api/decisiones   ${sha(bytesDelDecisorApi)}  ${Buffer.byteLength(bytesDelDecisorApi)} bytes`)
+  console.log(`       leer_decisiones   ${sha(bytesDelDecisorMcp)}  ${Buffer.byteLength(bytesDelDecisorMcp)} bytes`)
+  comprobar(
+    'las decisiones salen iguales por la API y por el conector',
+    bytesDelDecisorApi === bytesDelDecisorMcp,
+  )
+
+  const decisionesSinClave = await endpointDecisiones(new Request(`${ORIGEN}/api/decisiones`))
+  comprobar('/api/decisiones sin clave: 401', decisionesSinClave.status === 401)
+
+  const decisionesConTokenMcp = await endpointDecisiones(
+    new Request(`${ORIGEN}/api/decisiones`, {
+      headers: { Authorization: `Bearer ${emitido.access_token}` },
+    }),
+  )
+  comprobar('un token del conector no abre /api/decisiones', decisionesConTokenMcp.status === 401)
+
+  const decisionesPost = await endpointDecisiones(
+    new Request(`${ORIGEN}/api/decisiones`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${clave}` },
+    }),
+  )
+  comprobar('/api/decisiones no admite POST', decisionesPost.status === 405)
 }
 
 // --- Identidad byte a byte con ficheros exportados ---------------------------

@@ -15,6 +15,13 @@
   to = "/.netlify/functions/roadmap"
   status = 200
 
+# El decisor del mismo proyecto, con la misma clave. Aparte de /api/roadmap y
+# no dentro, para no moverle un byte a quien ya lee el roadmap.
+[[redirects]]
+  from = "/api/decisiones"
+  to = "/.netlify/functions/decisiones"
+  status = 200
+
 # Servidor MCP remoto. Esta es la direccion que se anade en claude.ai.
 [[redirects]]
   from = "/mcp"

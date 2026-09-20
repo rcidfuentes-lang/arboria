@@ -22,7 +22,9 @@
  * Netlify no tiene donde guardar una sesion, y el protocolo no la exige.
  */
 import { stringifyRoadmapJson } from '../../src/lib/roadmap-document.ts'
+import { stringifyDecisionesJson } from '../../src/lib/decisiones-document.ts'
 import type { RoadmapDocument, RoadmapNode } from '../../src/types/roadmap'
+import type { DecisionesDocument } from '../../src/types/decisiones'
 
 export const VERSIONES_MODERNAS = ['2026-07-28']
 export const VERSIONES_LEGADAS = ['2025-11-25', '2025-06-18', '2025-03-26']
@@ -35,12 +37,14 @@ export const CLAVE_IDENTIDAD = 'io.modelcontextprotocol/serverInfo'
 export const IDENTIDAD = { name: 'arboria-roadmap', version: '1.0.0' }
 
 export const INSTRUCCIONES =
-  'Da acceso de solo lectura al roadmap de un proyecto de Arboria. La conexion ' +
-  'esta atada a un unico proyecto: no hay forma de pedir otro ni de saber si ' +
-  'existe. leer_roadmap devuelve el documento entero, identico a la exportacion ' +
-  'de Arboria. leer_nodo devuelve una fase concreta con sus hijas, para no tener ' +
-  'que traerse el documento entero cuando solo interesa una rama. Ninguna ' +
-  'herramienta escribe.'
+  'Da acceso de solo lectura a un proyecto de Arboria: su roadmap y su decisor. ' +
+  'La conexion esta atada a un unico proyecto: no hay forma de pedir otro ni de ' +
+  'saber si existe. leer_roadmap devuelve el documento entero, identico a la ' +
+  'exportacion de Arboria. leer_nodo devuelve una fase concreta con sus hijas, ' +
+  'para no tener que traerse el documento entero cuando solo interesa una rama. ' +
+  'leer_decisiones devuelve las decisiones que Ruben ha escrito en ese proyecto: ' +
+  'que se decidio, cuando, por que, y si sigue vigente o la sustituyo otra. ' +
+  'Ninguna herramienta escribe.'
 
 // Codigos que el protocolo reserva, ademas de los de JSON-RPC.
 export const CODIGO_VERSION_NO_ADMITIDA = -32022
@@ -56,11 +60,23 @@ export type MensajeJsonRpc = {
 }
 
 /**
- * El documento del proyecto, o la razon por la que no se ha podido preparar.
+ * Lo que se ha podido preparar de este proyecto, o la razon por la que no.
  * Un fallo aqui no impide conectar ni listar herramientas: solo hace que la
- * llamada a una herramienta conteste que no puede, con el motivo.
+ * llamada a esa herramienta conteste que no puede, con el motivo.
  */
-export type Fuente = { documento: RoadmapDocument } | { fallo: string }
+export type Recurso<T> = { valor: T } | { fallo: string }
+
+/**
+ * El roadmap viene ya resuelto porque comprobar el token y traerlo son la
+ * misma consulta. Las decisiones vienen como una funcion y no como un valor a
+ * proposito, por dos razones: una peticion que solo lista herramientas no
+ * tiene por que ir a buscarlas, y un roadmap que no se puede normalizar no
+ * debe arrastrar consigo a un decisor que si.
+ */
+export type Fuente = {
+  roadmap: Recurso<RoadmapDocument>
+  decisiones: () => Promise<Recurso<DecisionesDocument>>
+}
 
 export type Contexto = {
   era: Era
@@ -102,6 +118,42 @@ export const HERRAMIENTAS = [
         },
       },
       required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'leer_decisiones',
+    title: 'Leer las decisiones del proyecto',
+    description:
+      'Devuelve las decisiones que Ruben ha escrito en este proyecto: que se ' +
+      'decidio con sus palabras, la fecha en que se decidio, el motivo, el tema, ' +
+      'donde esta el detalle y a que fase del roadmap toca, si toca a alguna. ' +
+      'Cada decision esta activa o inactiva; una inactiva dice por que se quito y ' +
+      'el numero de la que ocupa su sitio. Si se corrigio alguna vez, "correcciones" ' +
+      'dice lo que decia antes. Sin argumentos devuelve todas, que es lo normal: ' +
+      'son pocas. Los filtros son para cuando ya se sabe que se busca, y si no ' +
+      'casa ninguna la lista vuelve vacia.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        numero: {
+          type: 'integer',
+          description: 'El numero de una decision concreta, si se sabe.',
+        },
+        tema: {
+          type: 'string',
+          description:
+            'Filtra por tema. No distingue mayusculas. Los temas los pone Ruben al ' +
+            'escribir cada decision; para saber cuales hay, llamar sin filtros.',
+        },
+        estado: {
+          type: 'string',
+          enum: ['activa', 'inactiva', 'todas'],
+          description:
+            'Por defecto "todas". Una decision inactiva sigue explicando por que se ' +
+            'hizo lo que se hizo, asi que no se esconde salvo que se pida.',
+        },
+      },
       additionalProperties: false,
     },
   },
@@ -165,16 +217,25 @@ function idsDe(nodos: RoadmapNode[], acumulado: string[] = []): string[] {
   return acumulado
 }
 
-function ejecutar(nombre: unknown, argumentos: unknown, contexto: Contexto, id: unknown): Salida {
+async function ejecutar(
+  nombre: unknown,
+  argumentos: unknown,
+  contexto: Contexto,
+  id: unknown,
+): Promise<Salida> {
+  if (nombre === 'leer_decisiones') {
+    return decisiones(argumentos, contexto, id)
+  }
+
   if (nombre !== 'leer_roadmap' && nombre !== 'leer_nodo') {
     return fallo(id, -32602, `Unknown tool: ${String(nombre)}`)
   }
 
-  if ('fallo' in contexto.fuente) {
-    return textoDeHerramienta(contexto.fuente.fallo, contexto.era, id, true)
+  if ('fallo' in contexto.fuente.roadmap) {
+    return textoDeHerramienta(contexto.fuente.roadmap.fallo, contexto.era, id, true)
   }
 
-  const documento = contexto.fuente.documento
+  const documento = contexto.fuente.roadmap.valor
 
   if (nombre === 'leer_roadmap') {
     // stringifyRoadmapJson es el mismo serializador que usa el boton de
@@ -212,6 +273,54 @@ function ejecutar(nombre: unknown, argumentos: unknown, contexto: Contexto, id: 
   // El mismo serializador otra vez: lo que sale aqui es, caracter por caracter,
   // el fragmento correspondiente de la exportacion.
   return textoDeHerramienta(stringifyRoadmapJson(nodo), contexto.era, id)
+}
+
+/**
+ * Las decisiones, con los filtros aplicados sobre el documento ya normalizado.
+ *
+ * Se filtra aqui y no en la base porque la base ya ha hecho lo unico que no se
+ * puede hacer en otro sitio, que es decidir de que proyecto son. Un filtro por
+ * tema es una comodidad de lectura, no una frontera de permisos, y hacerlo
+ * aqui deja una sola consulta y una sola forma de documento.
+ */
+async function decisiones(argumentos: unknown, contexto: Contexto, id: unknown): Promise<Salida> {
+  const fuente = await contexto.fuente.decisiones()
+  if ('fallo' in fuente) {
+    return textoDeHerramienta(fuente.fallo, contexto.era, id, true)
+  }
+
+  const peticion = (argumentos && typeof argumentos === 'object' ? argumentos : {}) as {
+    numero?: unknown
+    tema?: unknown
+    estado?: unknown
+  }
+
+  const estado = typeof peticion.estado === 'string' ? peticion.estado : 'todas'
+  if (estado !== 'todas' && estado !== 'activa' && estado !== 'inactiva') {
+    return textoDeHerramienta(
+      'El argumento "estado" solo admite "activa", "inactiva" o "todas".',
+      contexto.era,
+      id,
+      true,
+    )
+  }
+
+  const tema = typeof peticion.tema === 'string' ? peticion.tema.trim().toLowerCase() : ''
+  const numero = typeof peticion.numero === 'number' ? peticion.numero : null
+
+  const documento = fuente.valor
+  const filtradas = documento.decisiones.filter((decision) => {
+    if (numero !== null && decision.numero !== numero) return false
+    if (tema && decision.tema.toLowerCase() !== tema) return false
+    if (estado !== 'todas' && decision.estado !== estado) return false
+    return true
+  })
+
+  return textoDeHerramienta(
+    stringifyDecisionesJson({ ...documento, decisiones: filtradas }),
+    contexto.era,
+    id,
+  )
 }
 
 // --- Despacho ----------------------------------------------------------------
@@ -266,7 +375,7 @@ export async function atender(mensaje: MensajeJsonRpc, contexto: Contexto): Prom
   if (metodo === 'tools/list') return sobre(id, { tools: HERRAMIENTAS }, contexto.era)
 
   if (metodo === 'tools/call') {
-    return ejecutar(parametros.name, parametros.arguments, contexto, id)
+    return await ejecutar(parametros.name, parametros.arguments, contexto, id)
   }
 
   // La era moderna pide que un metodo desconocido sea un 404 con el error de

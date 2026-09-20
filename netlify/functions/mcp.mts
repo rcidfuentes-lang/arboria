@@ -4,7 +4,7 @@
  * POST /mcp
  * Authorization: Bearer <token de acceso emitido por /oauth/token>
  *
- * Solo lectura. Las dos herramientas leen; no hay ninguna que escriba, ni
+ * Solo lectura. Las tres herramientas leen; no hay ninguna que escriba, ni
  * ninguna ruta aqui que escriba nada. El token no puede hacer otra cosa
  * porque no existe otra cosa que hacer.
  *
@@ -14,7 +14,7 @@
  *
  * Se contesta siempre con un unico objeto JSON, nunca con un flujo SSE. El
  * protocolo lo permite explicitamente, y las dos herramientas devuelven de
- * golpe algo que ya esta en memoria: no hay nada que ir emitiendo. Ademas una
+ * golpe algo pequeno y ya resuelto: no hay nada que ir emitiendo. Ademas una
  * funcion de Netlify no es el sitio para sostener una conexion abierta.
  *
  * Tampoco hay sesiones: ninguna respuesta asigna Mcp-Session-Id, asi que cada
@@ -23,6 +23,7 @@
  */
 import { CORS, bearerDe, json, origenPublico, preflight } from '../lib/http.ts'
 import { ErrorDeLectura, documentoDesdeRpc } from '../lib/roadmap-lectura.ts'
+import { decisionesDesdeRpc } from '../lib/decisiones-lectura.ts'
 import { RichTextUnavailableError } from '../../src/lib/roadmap-document.ts'
 import { ALCANCE, RUTA_METADATOS_RECURSO } from '../../src/lib/mcp-conector.ts'
 import {
@@ -34,7 +35,9 @@ import {
   errorDeVersion,
   mensajeDeError,
 } from '../lib/mcp-servidor.ts'
-import type { Era, Fuente, Salida } from '../lib/mcp-servidor.ts'
+import type { Era, Fuente, Recurso, Salida } from '../lib/mcp-servidor.ts'
+import type { RoadmapDocument } from '../../src/types/roadmap'
+import type { DecisionesDocument } from '../../src/types/decisiones'
 
 /**
  * Origenes de navegador admitidos. La especificacion obliga a validar Origin
@@ -118,14 +121,14 @@ export default async (request: Request): Promise<Response> => {
   const token = bearerDe(request)
   if (!token) return sinAutorizar(origen, null)
 
-  // Comprobar el token y traer el documento son la misma consulta: la funcion
+  // Comprobar el token y traer el roadmap son la misma consulta: la funcion
   // de la base devuelve el documento del proyecto al que apunta el token, o
   // null. No hay forma de preguntar una cosa sin la otra, y es a proposito.
-  let fuente: Fuente
+  let roadmap: Recurso<RoadmapDocument>
   try {
-    fuente = { documento: await documentoDesdeRpc('mcp_document_by_access_token', {
-      access_token: token,
-    }) }
+    roadmap = {
+      valor: await documentoDesdeRpc('mcp_document_by_access_token', { access_token: token }),
+    }
   } catch (error) {
     if (error instanceof ErrorDeLectura && error.codigo === 'unauthorized') {
       return sinAutorizar(origen, 'invalid_token')
@@ -141,20 +144,41 @@ export default async (request: Request): Promise<Response> => {
     }
     // El token era bueno —la base devolvio un documento— pero el documento no
     // se puede servir. Conectar y listar herramientas funciona; lo que falla
-    // es llamarlas, y con el motivo dicho.
+    // es llamar a las del roadmap, y con el motivo dicho. Las decisiones no
+    // dependen de esto: van por su propia consulta y no tienen HTML que sanear.
     if (error instanceof RichTextUnavailableError) {
-      fuente = {
+      roadmap = {
         fallo:
           'Este roadmap tiene ideas con contenido, y sanearlas necesita un DOM ' +
           'que aqui no hay. Se falla en alto en vez de devolver unos bytes ' +
           'distintos de los que produce la exportacion de Arboria.',
       }
     } else if (error instanceof ErrorDeLectura && error.codigo === 'invalid_roadmap_document') {
-      fuente = { fallo: 'Lo guardado para este proyecto no tiene la forma de un roadmap.' }
+      roadmap = { fallo: 'Lo guardado para este proyecto no tiene la forma de un roadmap.' }
     } else {
-      fuente = { fallo: 'No se ha podido normalizar el roadmap de este proyecto.' }
+      roadmap = { fallo: 'No se ha podido normalizar el roadmap de este proyecto.' }
     }
   }
+
+  // Las decisiones solo se piden si alguien las llama. El token ya esta dado
+  // por bueno a estas alturas; si entre una consulta y otra caducara, aqui se
+  // contesta con el motivo en vez de con un 401 a media conversacion.
+  const decisiones = async (): Promise<Recurso<DecisionesDocument>> => {
+    try {
+      return {
+        valor: await decisionesDesdeRpc('mcp_decisiones_by_access_token', {
+          access_token: token,
+        }),
+      }
+    } catch (error) {
+      if (error instanceof ErrorDeLectura && error.codigo === 'unauthorized') {
+        return { fallo: 'Este token ya no vale para leer las decisiones de este proyecto.' }
+      }
+      return { fallo: 'No se han podido leer las decisiones de este proyecto.' }
+    }
+  }
+
+  const fuente: Fuente = { roadmap, decisiones }
 
   let mensaje: unknown
   try {
