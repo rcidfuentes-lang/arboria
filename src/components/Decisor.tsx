@@ -41,6 +41,19 @@ type DecisorProps = {
   proyecto: { id: string; name: string }
 }
 
+/**
+ * Lo que la lista deja ver. Son las mismas tres opciones que admite la
+ * lectura de fuera —activa, inactiva o todas— porque la pregunta es la misma
+ * se haga desde donde se haga.
+ */
+type FiltroDeEstado = 'todas' | 'activas' | 'inactivas'
+
+const opcionesDeFiltro: { valor: FiltroDeEstado; etiqueta: string }[] = [
+  { valor: 'todas', etiqueta: 'Todas' },
+  { valor: 'activas', etiqueta: 'Activas' },
+  { valor: 'inactivas', etiqueta: 'Inactivas' },
+]
+
 type Borrador = {
   decidido: string
   fecha: string
@@ -237,6 +250,7 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
   const [busqueda, setBusqueda] = useState('')
+  const [filtro, setFiltro] = useState<FiltroDeEstado>('todas')
   const [seleccionada, setSeleccionada] = useState<string | null>(null)
   const [escribiendoNueva, setEscribiendoNueva] = useState(false)
   const [borrador, setBorrador] = useState<Borrador>(borradorVacio)
@@ -310,16 +324,41 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     setAviso('')
   }, [actual])
 
+  // El estado y el texto se cruzan: el filtro no sustituye al buscador, lo
+  // acota. Buscar "canon" con Inactivas puesto son las inactivas que hablan
+  // de canon, no una cosa ni la otra.
   const visibles = useMemo(() => {
     const texto = busqueda.trim().toLowerCase()
-    if (!texto) return decisiones
-    return decisiones.filter((fila) =>
-      [fila.decidido, fila.motivo, fila.tema, fila.detalle ?? '', fila.nodo_id ?? '', `${fila.numero}`]
+    return decisiones.filter((fila) => {
+      if (filtro === 'activas' && fila.estado !== 'activa') return false
+      if (filtro === 'inactivas' && fila.estado !== 'inactiva') return false
+      if (!texto) return true
+      return [
+        fila.decidido,
+        fila.motivo,
+        fila.tema,
+        fila.detalle ?? '',
+        fila.nodo_id ?? '',
+        `${fila.numero}`,
+      ]
         .join(' ')
         .toLowerCase()
-        .includes(texto),
-    )
-  }, [busqueda, decisiones])
+        .includes(texto)
+    })
+  }, [busqueda, decisiones, filtro])
+
+  /**
+   * El recuento dice lo que hay y, cuando no se esta viendo todo, tambien lo
+   * que se esta viendo. El total no se pierde nunca: si desapareciera al
+   * filtrar, la lista dejaria de poder contestar "cuantas hay".
+   */
+  const recuento = useMemo(() => {
+    const activas = decisiones.filter((fila) => fila.estado === 'activa').length
+    const total = `${decisiones.length} escritas${
+      activas === decisiones.length ? '' : `, ${activas} activas`
+    }`
+    return visibles.length === decisiones.length ? total : `${visibles.length} a la vista · ${total}`
+  }, [decisiones, visibles])
 
   const numeroDe = useMemo(
     () => new Map(decisiones.map((fila) => [fila.id, fila.numero])),
@@ -597,12 +636,7 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
         <div className="decisor-lista-toolbar">
           <div>
             <h2>Decisiones</h2>
-            <p>
-              {decisiones.length} escritas
-              {decisiones.some((fila) => fila.estado === 'inactiva')
-                ? `, ${decisiones.filter((fila) => fila.estado === 'activa').length} activas`
-                : ''}
-            </p>
+            <p>{recuento}</p>
           </div>
           <input
             aria-label="Buscar decisiones"
@@ -611,6 +645,19 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
             type="search"
             value={busqueda}
           />
+          <div className="decisor-filtro" role="group" aria-label="Filtrar por estado">
+            {opcionesDeFiltro.map((opcion) => (
+              <button
+                aria-pressed={filtro === opcion.valor}
+                className={filtro === opcion.valor ? 'active' : ''}
+                key={opcion.valor}
+                onClick={() => setFiltro(opcion.valor)}
+                type="button"
+              >
+                {opcion.etiqueta}
+              </button>
+            ))}
+          </div>
           <button aria-label="Nueva decision" className="icon-only" onClick={abrirNueva} title="Nueva decision" type="button">
             <Icon name="plus" />
           </button>
@@ -644,7 +691,11 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
         ) : null}
 
         {!cargando && decisiones.length > 0 && visibles.length === 0 ? (
-          <p className="empty-state">No hay decisiones que coincidan.</p>
+          <p className="empty-state">
+            {busqueda.trim() || filtro === 'todas'
+              ? 'No hay decisiones que coincidan.'
+              : `No hay ninguna decision ${filtro === 'activas' ? 'activa' : 'inactiva'}.`}
+          </p>
         ) : null}
 
         <ul className="decisor-lista">
@@ -658,11 +709,19 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                 <span className="decisor-numero">{fila.numero}</span>
                 <span className="decisor-resumen">
                   <strong>{fila.decidido}</strong>
-                  <span>
-                    {fila.tema} · {formatearFecha(fila.fecha)}
-                    {fila.estado === 'inactiva'
-                      ? ` · inactiva, la sustituye la ${numeroDe.get(fila.sustituida_por ?? '') ?? '?'}`
-                      : ''}
+                  {/* La etiqueta y no solo el texto del final: con la lista
+                      llena, "inactiva" perdido detras del tema y la fecha hay
+                      que ir a buscarlo. Asi se ve barriendo la columna. */}
+                  <span className="decisor-resumen-pie">
+                    {fila.estado === 'inactiva' ? (
+                      <span className="decisor-chip inactiva">inactiva</span>
+                    ) : null}
+                    <span>
+                      {fila.tema} · {formatearFecha(fila.fecha)}
+                      {fila.estado === 'inactiva'
+                        ? ` · la sustituye la ${numeroDe.get(fila.sustituida_por ?? '') ?? '?'}`
+                        : ''}
+                    </span>
                   </span>
                 </span>
               </button>

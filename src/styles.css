@@ -1563,6 +1563,34 @@ h2 {
   margin: 0.1rem 0 0;
 }
 
+/* Tres botones y no un desplegable: cual esta puesto se ve sin abrir nada, y
+   cambiarlo es un clic. Mismo patron que el conmutador de vistas de la barra,
+   que es el que Ruben ya sabe leer. */
+.decisor-filtro {
+  background: #edf3ee;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  padding: 0.2rem;
+}
+
+.decisor-filtro button {
+  background: transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  min-height: 28px;
+  padding: 0.25rem 0.6rem;
+}
+
+.decisor-filtro button.active,
+.decisor-filtro button:hover {
+  background: var(--panel);
+  color: var(--brand-strong);
+}
+
 .decisor-lista {
   /* align-content, porque si no las filas se reparten el alto que sobra y
      tres decisiones salen separadas por medio panel en blanco. */
@@ -1600,9 +1628,33 @@ h2 {
 }
 
 /* Una decision inactiva sigue estando, y se ve que esta: no se esconde ni se
-   tacha, solo se apaga. */
+   tacha, solo se apaga y lo dice. */
 .decisor-lista button.inactiva .decisor-resumen strong {
   color: var(--muted);
+}
+
+/* Con box-shadow y no con border-left, para que la barra no mueva el texto de
+   sitio respecto a las filas de al lado. */
+.decisor-lista button.inactiva {
+  box-shadow: inset 3px 0 0 rgba(98, 116, 103, 0.45);
+}
+
+.decisor-resumen-pie {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.decisor-lista .decisor-chip {
+  background: var(--panel);
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  padding: 0 0.35rem;
+  text-transform: uppercase;
 }
 
 .decisor-numero {
