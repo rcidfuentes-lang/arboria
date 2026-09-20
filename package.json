@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "verificar-api": "node scripts/verificar-api-roadmap.mjs",
+    "verificar-mcp": "node scripts/verificar-mcp.mjs",
+    "verificar-esquema-mcp": "bash scripts/verificar-esquema-mcp.sh",
     "preview": "vite preview"
   },
   "dependencies": {
