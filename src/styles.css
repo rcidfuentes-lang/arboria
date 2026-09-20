@@ -2,6 +2,10 @@
   --bg: #f7faf6;
   --panel: #ffffff;
   --panel-soft: #eef6ef;
+  /* El fondo suave del decisor. Se usaba desde que existe la pantalla pero no
+     estaba declarado, asi que el numero de cada decision, la caja de la que
+     esta inactiva y el resalte de la seleccionada salian sin fondo. */
+  --surface-soft: #f1f6f2;
   --text: #173122;
   --muted: #627467;
   --border: #d9e5dc;
@@ -798,14 +802,29 @@ h2 {
   background: #f4f7f4;
 }
 
+/* Una fila con lo que haya. Antes eran seis columnas fijas, una por control,
+   y eso solo cuadraba con el arbol delante: en Decisiones no estan ni el
+   progreso ni los botones del arbol, asi que el conmutador de vistas caia en
+   la columna de 82px del progreso y salia partido. Con flex, cada control
+   ocupa lo suyo, y si no caben se van a la linea siguiente en vez de salirse. */
 .roadmap-bar {
   align-items: center;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
-  grid-template-columns: minmax(180px, 1fr) 82px auto auto auto auto;
   padding: 0.55rem 0.75rem;
+}
+
+/* El titulo es lo unico que se estira, y lo que se encoge cuando falta sitio. */
+.roadmap-bar > .roadmap-title {
+  flex: 1 1 180px;
+}
+
+/* Proyectos y cerrar sesion, siempre al final de su linea. */
+.roadmap-bar > .toolbar-group:last-child {
+  margin-left: auto;
 }
 
 .roadmap-bar button,
@@ -844,34 +863,43 @@ h2 {
   padding: 0.35rem 0.2rem;
 }
 
+/* La barra y el numero, uno al lado del otro. El numero iba antes centrado
+   encima de la pastilla y en blanco, asi que solo se leia la parte que caia
+   sobre el relleno verde: con un 50%, medio numero desaparecia. */
 .project-progress {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+}
+
+.project-progress-track {
   background: #e8eee9;
   border-radius: 999px;
   display: block;
-  height: 24px;
+  height: 8px;
   overflow: hidden;
-  position: relative;
+  width: 56px;
 }
 
-.project-progress span {
+.project-progress-track span {
   background: var(--brand);
+  border-radius: 999px;
   display: block;
   height: 100%;
 }
 
 .project-progress strong {
-  color: #ffffff;
+  color: var(--brand-strong);
   font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
   font-weight: 900;
-  inset: 0;
-  line-height: 24px;
-  position: absolute;
-  text-align: center;
 }
 
 .toolbar-group {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 
@@ -880,6 +908,7 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 8px;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.2rem;
   padding: 0.2rem;
 }
@@ -1535,6 +1564,9 @@ h2 {
 }
 
 .decisor-lista {
+  /* align-content, porque si no las filas se reparten el alto que sobra y
+     tres decisiones salen separadas por medio panel en blanco. */
+  align-content: start;
   display: grid;
   gap: 0.3rem;
   list-style: none;
@@ -1621,7 +1653,12 @@ h2 {
 .decisor-cabecera {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+.decisor-cabecera .decisor-fechas {
+  margin-left: auto;
 }
 
 .decisor-cabecera h2 {
@@ -1687,6 +1724,41 @@ h2 {
   padding-top: 0.2rem;
 }
 
+/* Corregir una decision y retirarla son dos cosas distintas, asi que van en
+   dos cajas distintas, cada una con su titulo, su explicacion en una linea y
+   su boton. Lo que cambia si guardo y lo que pasa si inactivo se leen sin
+   tener que deducirlo del orden de los controles. */
+.decisor-bloque {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+}
+
+.decisor-bloque-cabecera {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.decisor-bloque-cabecera h2,
+.decisor-bloque-cabecera h3 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.decisor-bloque-cabecera p {
+  font-size: 0.8rem;
+  font-weight: 400;
+  margin: 0;
+}
+
+.decisor-bloque-retirar {
+  background: var(--danger-soft);
+  border-color: rgba(162, 48, 48, 0.25);
+  justify-items: start;
+}
+
 .decisor-nota,
 .decisor-fechas {
   font-size: 0.75rem;
@@ -1702,21 +1774,18 @@ h2 {
   padding: 0.5rem 0.7rem;
 }
 
-.decisor-inactivar,
 .decisor-rastro {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.7rem 0.85rem;
 }
 
-.decisor-inactivar summary,
 .decisor-rastro summary {
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 600;
 }
 
-.decisor-inactivar[open],
 .decisor-rastro[open] {
   display: grid;
   gap: 0.6rem;
@@ -1790,6 +1859,46 @@ h2 {
 
 .modal.compact {
   max-width: 320px;
+}
+
+/* El modal de retirada lleva dentro un formulario entero, asi que sus areas
+   de texto son las de un formulario y no las del importador, que es un
+   fichero pegado y necesita sitio. */
+.modal.modal-retirada textarea {
+  min-height: 0;
+}
+
+.decisor-retirada-cual {
+  background: var(--surface-soft);
+  border-left: 3px solid var(--border);
+  font-size: 0.85rem;
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  white-space: pre-wrap;
+}
+
+.retirada-modos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.retirada-modos button {
+  padding: 0.55rem 0.75rem;
+}
+
+/* La lista de candidatas se lee como la lista de la izquierda, que es la que
+   Ruben ya sabe leer. Con tope de alto, que el modal no crezca sin fin. */
+.retirada-candidatas {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-height: 240px;
+  padding: 0.4rem;
+}
+
+.retirada-candidatas button.active {
+  background: var(--panel-soft);
+  border-color: rgba(8, 140, 63, 0.35);
 }
 
 .modal textarea {
@@ -1873,11 +1982,6 @@ h2 {
 }
 
 @media (max-width: 920px) {
-  .roadmap-bar {
-    align-items: stretch;
-    grid-template-columns: 1fr;
-  }
-
   .toolbar-group,
   .tree-mini-actions {
     overflow-x: auto;

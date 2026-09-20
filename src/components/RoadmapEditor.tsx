@@ -944,8 +944,13 @@ export function RoadmapEditor({
           )}
         </div>
         {enElArbol ? (
+          // El numero va al lado de la barra y no encima. Encima iba en blanco
+          // sobre la pastilla, asi que por debajo del 100% la mitad del numero
+          // caia sobre el fondo claro y no se leia.
           <span className="project-progress" title={`${projectProgress}% completado`}>
-            <span style={{ width: `${projectProgress}%` }} />
+            <span className="project-progress-track" aria-hidden="true">
+              <span style={{ width: `${projectProgress}%` }} />
+            </span>
             <strong>{projectProgress}%</strong>
           </span>
         ) : null}

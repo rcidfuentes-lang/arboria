@@ -29,6 +29,11 @@ import type { DecisionFila, DecisionHistorialFila } from '../types/decisiones'
  *   acto, no un efecto de haber tecleado.
  * - No guarda en localStorage. Una decision a medias no es una decision, y una
  *   copia local que nadie ha confirmado no debe parecerse a una que si.
+ *
+ * La pantalla separa dos cosas que no son la misma y que antes estaban una
+ * debajo de otra: corregir lo que una decision dice, y retirarla porque otra
+ * ocupa su sitio. Lo primero se hace en el formulario; lo segundo, en un modal
+ * que pide de una vez las dos cosas que hacen falta.
  */
 
 type DecisorProps = {
@@ -45,9 +50,11 @@ type Borrador = {
   nodo: string
 }
 
+const hoy = () => new Date().toISOString().slice(0, 10)
+
 const borradorVacio = (): Borrador => ({
   decidido: '',
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: hoy(),
   motivo: '',
   tema: '',
   detalle: '',
@@ -63,6 +70,16 @@ function borradorDe(fila: DecisionFila): Borrador {
     detalle: fila.detalle ?? '',
     nodo: fila.nodo_id ?? '',
   }
+}
+
+/**
+ * El punto de partida de la decision que sustituye a otra: lo que decia la
+ * vieja, con la fecha de hoy. Casi siempre la nueva es la vieja con un cambio,
+ * y copiarla a mano para cambiar una linea es trabajo que no dice nada. La
+ * fecha no se hereda porque la fecha es la del hecho, y el hecho es de hoy.
+ */
+function borradorHeredado(fila: DecisionFila): Borrador {
+  return { ...borradorDe(fila), fecha: hoy() }
 }
 
 function mismoBorrador(uno: Borrador, otro: Borrador) {
@@ -82,6 +99,18 @@ function faltaAlgo(borrador: Borrador) {
   if (!borrador.motivo.trim()) return 'Escribe por que.'
   if (!borrador.tema.trim()) return 'Pon un tema, para poder buscarla luego.'
   return ''
+}
+
+/** Lo que se manda a la base: lo mismo, recortado y con los vacios a nulo. */
+function comoSeEscribe(borrador: Borrador) {
+  return {
+    decidido: borrador.decidido.trim(),
+    fecha: borrador.fecha,
+    motivo: borrador.motivo.trim(),
+    tema: borrador.tema.trim(),
+    detalle: borrador.detalle.trim() || null,
+    nodo: borrador.nodo.trim() || null,
+  }
 }
 
 function formatearFecha(valor: string) {
@@ -115,6 +144,92 @@ function descargar(nombre: string, texto: string) {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Los campos de una decision. Son los mismos se escriba donde se escriba: en
+ * el formulario de la pantalla o dentro del modal de retirada. Estan aqui en
+ * un sitio y no en dos porque "la sustituta se escribe entera, y sus campos
+ * son los de cualquier decision" solo es verdad si de verdad son los mismos.
+ */
+function CamposDeDecision({
+  borrador,
+  cambiar,
+  idDeTemas,
+  temas,
+}: {
+  borrador: Borrador
+  cambiar: (borrador: Borrador) => void
+  idDeTemas: string
+  temas: string[]
+}) {
+  return (
+    <>
+      <label className="decisor-campo">
+        Que se decidio
+        <textarea
+          onChange={(evento) => cambiar({ ...borrador, decidido: evento.target.value })}
+          placeholder="Con tus palabras. Texto plano."
+          rows={4}
+          value={borrador.decidido}
+        />
+      </label>
+
+      <div className="decisor-fila">
+        <label className="decisor-campo">
+          Fecha en que se decidio
+          <input
+            onChange={(evento) => cambiar({ ...borrador, fecha: evento.target.value })}
+            type="date"
+            value={borrador.fecha}
+          />
+        </label>
+        <label className="decisor-campo">
+          Tema
+          <input
+            list={idDeTemas}
+            onChange={(evento) => cambiar({ ...borrador, tema: evento.target.value })}
+            placeholder="arquitectura, producto, proceso..."
+            value={borrador.tema}
+          />
+          <datalist id={idDeTemas}>
+            {temas.map((tema) => (
+              <option key={tema} value={tema} />
+            ))}
+          </datalist>
+        </label>
+      </div>
+
+      <label className="decisor-campo">
+        Por que
+        <textarea
+          onChange={(evento) => cambiar({ ...borrador, motivo: evento.target.value })}
+          placeholder="El motivo, para que dentro de un ano se entienda."
+          rows={3}
+          value={borrador.motivo}
+        />
+      </label>
+
+      <div className="decisor-fila">
+        <label className="decisor-campo">
+          Donde esta el detalle
+          <input
+            onChange={(evento) => cambiar({ ...borrador, detalle: evento.target.value })}
+            placeholder="Un acta, un documento, una direccion. Opcional."
+            value={borrador.detalle}
+          />
+        </label>
+        <label className="decisor-campo">
+          Fase del roadmap
+          <input
+            onChange={(evento) => cambiar({ ...borrador, nodo: evento.target.value })}
+            placeholder="SP1.3, si toca alguna. Opcional."
+            value={borrador.nodo}
+          />
+        </label>
+      </div>
+    </>
+  )
+}
+
 export function Decisor({ projectId, proyecto }: DecisorProps) {
   const [decisiones, setDecisiones] = useState<DecisionFila[]>([])
   const [historial, setHistorial] = useState<DecisionHistorialFila[]>([])
@@ -126,9 +241,17 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
   const [escribiendoNueva, setEscribiendoNueva] = useState(false)
   const [borrador, setBorrador] = useState<Borrador>(borradorVacio)
   const [guardando, setGuardando] = useState(false)
+
+  // La retirada, entera: se abre, se rellena y se acepta sin salir del modal.
+  const [retirando, setRetirando] = useState(false)
+  const [errorBaja, setErrorBaja] = useState('')
   const [inactivando, setInactivando] = useState(false)
   const [motivoBaja, setMotivoBaja] = useState('')
+  const [comoSustituye, setComoSustituye] = useState<'nueva' | 'existente'>('nueva')
+  const [borradorSustituta, setBorradorSustituta] = useState<Borrador>(borradorVacio)
   const [sustituta, setSustituta] = useState('')
+  const [busquedaSustituta, setBusquedaSustituta] = useState('')
+
   const [importando, setImportando] = useState(false)
   const [mostrarImport, setMostrarImport] = useState(false)
   const [textoImport, setTextoImport] = useState('')
@@ -184,8 +307,6 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
 
   useEffect(() => {
     setBorrador(actual ? borradorDe(actual) : borradorVacio())
-    setMotivoBaja('')
-    setSustituta('')
     setAviso('')
   }, [actual])
 
@@ -205,10 +326,27 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     [decisiones],
   )
 
+  const temas = useMemo(
+    () => [...new Set([...decisiones.map((fila) => fila.tema), ...temasSugeridos])],
+    [decisiones],
+  )
+
   const candidatasASustituir = useMemo(
     () => decisiones.filter((fila) => fila.estado === 'activa' && fila.id !== actual?.id),
     [actual, decisiones],
   )
+
+  /** Las candidatas que quedan al buscar, por texto y por numero. */
+  const candidatasVisibles = useMemo(() => {
+    const texto = busquedaSustituta.trim().toLowerCase()
+    if (!texto) return candidatasASustituir
+    return candidatasASustituir.filter((fila) =>
+      [fila.decidido, fila.motivo, fila.tema, fila.nodo_id ?? '', `${fila.numero}`]
+        .join(' ')
+        .toLowerCase()
+        .includes(texto),
+    )
+  }, [busquedaSustituta, candidatasASustituir])
 
   const cambiada = actual ? !mismoBorrador(borrador, borradorDe(actual)) : true
 
@@ -237,16 +375,17 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     setError('')
 
     // El numero no se manda: lo pone la base, consecutivo por proyecto.
+    const campos = comoSeEscribe(borrador)
     const { data, error: fallo } = await cliente
       .from('decisiones')
       .insert({
         project_id: projectId,
-        decidido: borrador.decidido.trim(),
-        fecha: borrador.fecha,
-        motivo: borrador.motivo.trim(),
-        tema: borrador.tema.trim(),
-        detalle: borrador.detalle.trim() || null,
-        nodo_id: borrador.nodo.trim() || null,
+        decidido: campos.decidido,
+        fecha: campos.fecha,
+        motivo: campos.motivo,
+        tema: campos.tema,
+        detalle: campos.detalle,
+        nodo_id: campos.nodo,
       })
       .select('*')
       .single()
@@ -275,15 +414,16 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     setGuardando(true)
     setError('')
 
+    const campos = comoSeEscribe(borrador)
     const { data, error: fallo } = await cliente
       .from('decisiones')
       .update({
-        decidido: borrador.decidido.trim(),
-        fecha: borrador.fecha,
-        motivo: borrador.motivo.trim(),
-        tema: borrador.tema.trim(),
-        detalle: borrador.detalle.trim() || null,
-        nodo_id: borrador.nodo.trim() || null,
+        decidido: campos.decidido,
+        fecha: campos.fecha,
+        motivo: campos.motivo,
+        tema: campos.tema,
+        detalle: campos.detalle,
+        nodo_id: campos.nodo,
       })
       .eq('id', actual.id)
       .select('*')
@@ -303,43 +443,68 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     cargar()
   }
 
-  async function inactivar() {
+  /**
+   * Retirar una decision son dos escrituras que solo valen juntas, asi que el
+   * modal las pide juntas y la base las hace juntas. Aqui se abre con el texto
+   * de la que se retira ya puesto, que es de donde casi siempre se parte.
+   */
+  function abrirRetirada() {
     if (!actual) return
+    setRetirando(true)
+    setErrorBaja('')
+    setMotivoBaja('')
+    setComoSustituye('nueva')
+    setBorradorSustituta(borradorHeredado(actual))
+    setSustituta('')
+    setBusquedaSustituta('')
+  }
+
+  async function retirar() {
+    if (!actual) return
+
     if (!motivoBaja.trim()) {
-      setError('Di por que se quita.')
+      setErrorBaja('Di por que se retira.')
       return
     }
-    if (!sustituta) {
-      setError('Elige la decision que ocupa su sitio.')
+
+    if (comoSustituye === 'nueva') {
+      const falta = faltaAlgo(borradorSustituta)
+      if (falta) {
+        setErrorBaja(`En la decision que la sustituye: ${falta.toLowerCase()}`)
+        return
+      }
+    } else if (!sustituta) {
+      setErrorBaja('Elige la decision que ocupa su sitio, o escribela aqui mismo.')
       return
     }
 
     setInactivando(true)
-    setError('')
+    setErrorBaja('')
 
-    const { data, error: fallo } = await cliente
-      .from('decisiones')
-      .update({
-        estado: 'inactiva',
-        motivo_inactivacion: motivoBaja.trim(),
-        sustituida_por: sustituta,
-      })
-      .eq('id', actual.id)
-      .select('*')
-      .single()
+    // Una sola llamada: o nace la nueva y la vieja queda inactiva apuntando a
+    // ella, o no se escribe nada. Las dos cosas en dos llamadas desde aqui
+    // dejarian la nueva escrita si fallase la segunda.
+    const { data, error: fallo } = await cliente.rpc('inactivar_decision', {
+      proyecto: projectId,
+      decision: actual.id,
+      por_que: motivoBaja.trim(),
+      sustituta: comoSustituye === 'existente' ? sustituta : null,
+      nueva: comoSustituye === 'nueva' ? comoSeEscribe(borradorSustituta) : null,
+    })
 
     setInactivando(false)
     if (fallo) {
-      setError(fallo.message)
+      setErrorBaja(`No se ha escrito nada. ${fallo.message}`)
       return
     }
 
-    setDecisiones((lista) =>
-      lista.map((fila) => (fila.id === actual.id ? (data as DecisionFila) : fila)),
+    const resumen = (data ?? {}) as { retirada?: number; sustituta?: number; creada?: boolean }
+    setRetirando(false)
+    setAviso(
+      resumen.creada
+        ? `La decision ${resumen.retirada} queda inactiva. La sustituye la ${resumen.sustituta}, que se acaba de escribir.`
+        : `La decision ${resumen.retirada} queda inactiva. La sustituye la ${resumen.sustituta}.`,
     )
-    setMotivoBaja('')
-    setSustituta('')
-    setAviso('Inactivada.')
     cargar()
   }
 
@@ -531,6 +696,14 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
               {actual ? (
                 <span className={`decisor-chip ${actual.estado}`}>{actual.estado}</span>
               ) : null}
+              {actual ? (
+                <p className="muted decisor-fechas">
+                  Escrita el {formatearMomento(actual.created_at)}
+                  {actual.updated_at > actual.created_at
+                    ? ` · corregida el ${formatearMomento(actual.updated_at)}`
+                    : ''}
+                </p>
+              ) : null}
             </div>
 
             {actual?.estado === 'inactiva' ? (
@@ -543,156 +716,71 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
               </div>
             ) : null}
 
-            <label className="decisor-campo">
-              Que se decidio
-              <textarea
-                onChange={(evento) => setBorrador({ ...borrador, decidido: evento.target.value })}
-                placeholder="Con tus palabras. Texto plano."
-                rows={4}
-                value={borrador.decidido}
+            {/* Lo que la decision dice, y el unico sitio desde el que cambia. */}
+            <section className="decisor-bloque">
+              <header className="decisor-bloque-cabecera">
+                <h3>{escribiendoNueva ? 'Lo que se decide' : 'Lo que dice'}</h3>
+                <p className="muted">
+                  {escribiendoNueva
+                    ? 'Al guardar nace una decision nueva, con el numero siguiente.'
+                    : 'Guardar cambia lo que dice y deja escrito lo que decia antes. Sigue siendo la misma decision.'}
+                </p>
+              </header>
+
+              <CamposDeDecision
+                borrador={borrador}
+                cambiar={setBorrador}
+                idDeTemas="decisor-temas"
+                temas={temas}
               />
-            </label>
 
-            <div className="decisor-fila">
-              <label className="decisor-campo">
-                Fecha en que se decidio
-                <input
-                  onChange={(evento) => setBorrador({ ...borrador, fecha: evento.target.value })}
-                  type="date"
-                  value={borrador.fecha}
-                />
-              </label>
-              <label className="decisor-campo">
-                Tema
-                <input
-                  list="decisor-temas"
-                  onChange={(evento) => setBorrador({ ...borrador, tema: evento.target.value })}
-                  placeholder="arquitectura, producto, proceso..."
-                  value={borrador.tema}
-                />
-                <datalist id="decisor-temas">
-                  {[...new Set([...decisiones.map((fila) => fila.tema), ...temasSugeridos])].map(
-                    (tema) => (
-                      <option key={tema} value={tema} />
-                    ),
-                  )}
-                </datalist>
-              </label>
-            </div>
-
-            <label className="decisor-campo">
-              Por que
-              <textarea
-                onChange={(evento) => setBorrador({ ...borrador, motivo: evento.target.value })}
-                placeholder="El motivo, para que dentro de un ano se entienda."
-                rows={3}
-                value={borrador.motivo}
-              />
-            </label>
-
-            <div className="decisor-fila">
-              <label className="decisor-campo">
-                Donde esta el detalle
-                <input
-                  onChange={(evento) => setBorrador({ ...borrador, detalle: evento.target.value })}
-                  placeholder="Un acta, un documento, una direccion. Opcional."
-                  value={borrador.detalle}
-                />
-              </label>
-              <label className="decisor-campo">
-                Fase del roadmap
-                <input
-                  onChange={(evento) => setBorrador({ ...borrador, nodo: evento.target.value })}
-                  placeholder="SP1.3, si toca alguna. Opcional."
-                  value={borrador.nodo}
-                />
-              </label>
-            </div>
-
-            <div className="decisor-acciones">
-              {escribiendoNueva ? (
-                <>
-                  <button disabled={guardando} onClick={guardarNueva} type="button">
-                    <Icon name="check" /> {guardando ? 'Guardando...' : 'Guardar la decision'}
-                  </button>
-                  <button
-                    className="secondary-button"
-                    onClick={() => setEscribiendoNueva(false)}
-                    type="button"
-                  >
-                    Cancelar
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button disabled={guardando || !cambiada} onClick={guardarCorreccion} type="button">
-                    <Icon name="check" /> {guardando ? 'Guardando...' : 'Guardar la correccion'}
-                  </button>
-                  {cambiada ? (
+              <div className="decisor-acciones">
+                {escribiendoNueva ? (
+                  <>
+                    <button disabled={guardando} onClick={guardarNueva} type="button">
+                      <Icon name="check" /> {guardando ? 'Guardando...' : 'Guardar la decision'}
+                    </button>
                     <button
                       className="secondary-button"
-                      onClick={() => actual && setBorrador(borradorDe(actual))}
+                      onClick={() => setEscribiendoNueva(false)}
                       type="button"
                     >
-                      Descartar los cambios
+                      Cancelar
                     </button>
-                  ) : null}
-                  <span className="muted decisor-nota">
-                    Corregir deja dicho lo que decia antes. No se borra nada.
-                  </span>
-                </>
-              )}
-            </div>
+                  </>
+                ) : (
+                  <>
+                    <button disabled={guardando || !cambiada} onClick={guardarCorreccion} type="button">
+                      <Icon name="check" /> {guardando ? 'Guardando...' : 'Guardar la correccion'}
+                    </button>
+                    {cambiada ? (
+                      <button
+                        className="secondary-button"
+                        onClick={() => actual && setBorrador(borradorDe(actual))}
+                        type="button"
+                      >
+                        Descartar los cambios
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </section>
 
-            {actual ? (
-              <p className="muted decisor-fechas">
-                Escrita el {formatearMomento(actual.created_at)}
-                {actual.updated_at > actual.created_at
-                  ? ` · tocada por ultima vez el ${formatearMomento(actual.updated_at)}`
-                  : ''}
-              </p>
-            ) : null}
-
+            {/* Retirarla es otra cosa, y por eso esta en otro sitio. */}
             {actual?.estado === 'activa' ? (
-              <details className="decisor-inactivar">
-                <summary>Inactivar esta decision</summary>
-                <p className="modal-hint">
-                  Una decision se quita porque otra ocupa su sitio. Las dos cosas son
-                  obligatorias: por que se quita, y cual la sustituye.
-                </p>
-                <label className="decisor-campo">
-                  Por que se quita
-                  <textarea
-                    onChange={(evento) => setMotivoBaja(evento.target.value)}
-                    rows={2}
-                    value={motivoBaja}
-                  />
-                </label>
-                <label className="decisor-campo">
-                  Cual la sustituye
-                  <select onChange={(evento) => setSustituta(evento.target.value)} value={sustituta}>
-                    <option value="">Elige una decision activa</option>
-                    {candidatasASustituir.map((fila) => (
-                      <option key={fila.id} value={fila.id}>
-                        {fila.numero} — {fila.decidido.slice(0, 60)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {candidatasASustituir.length === 0 ? (
+              <section className="decisor-bloque decisor-bloque-retirar">
+                <header className="decisor-bloque-cabecera">
+                  <h3>Retirarla</h3>
                   <p className="muted">
-                    No hay ninguna otra decision activa que pueda ocupar su sitio. Escribe
-                    antes la que la sustituye.
+                    Deja de estar vigente. No se borra ni se toca lo que dice: queda apuntando a la
+                    decision que ocupa su sitio.
                   </p>
-                ) : null}
-                <button
-                  disabled={inactivando || candidatasASustituir.length === 0}
-                  onClick={inactivar}
-                  type="button"
-                >
-                  {inactivando ? 'Inactivando...' : 'Inactivar'}
+                </header>
+                <button className="secondary-button text-danger" onClick={abrirRetirada} type="button">
+                  Inactivar la decision {actual.numero}
                 </button>
-              </details>
+              </section>
             ) : null}
 
             {rastroDeLaActual.length > 0 ? (
@@ -715,6 +803,155 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
           </>
         ) : null}
       </section>
+
+      {retirando && actual ? (
+        <div className="modal-backdrop">
+          <section
+            aria-labelledby="titulo-retirada"
+            className="modal modal-retirada"
+            role="dialog"
+          >
+            <div className="decisor-bloque-cabecera">
+              <h2 id="titulo-retirada">Retirar la decision {actual.numero}</h2>
+              <p className="modal-hint">
+                Se retira porque otra ocupa su sitio. Las dos cosas se hacen de una vez: si algo
+                falla no se escribe nada.
+              </p>
+            </div>
+
+            <p className="decisor-retirada-cual">{actual.decidido}</p>
+
+            <label className="decisor-campo">
+              Por que se retira
+              <textarea
+                onChange={(evento) => {
+                  setMotivoBaja(evento.target.value)
+                  setErrorBaja('')
+                }}
+                placeholder="Lo que ha cambiado desde que se decidio."
+                rows={2}
+                value={motivoBaja}
+              />
+            </label>
+
+            <div className="decisor-bloque-cabecera">
+              <h3>La decision que la sustituye</h3>
+            </div>
+
+            <div className="retirada-modos" role="group" aria-label="La decision que la sustituye">
+              <button
+                aria-pressed={comoSustituye === 'nueva'}
+                className={comoSustituye === 'nueva' ? 'active' : 'secondary-button'}
+                onClick={() => {
+                  setComoSustituye('nueva')
+                  setErrorBaja('')
+                }}
+                type="button"
+              >
+                Escribirla aqui
+              </button>
+              <button
+                aria-pressed={comoSustituye === 'existente'}
+                className={comoSustituye === 'existente' ? 'active' : 'secondary-button'}
+                onClick={() => {
+                  setComoSustituye('existente')
+                  setErrorBaja('')
+                }}
+                type="button"
+              >
+                Elegir una que ya existe
+              </button>
+            </div>
+
+            {comoSustituye === 'nueva' ? (
+              <>
+                <div className="decisor-acciones">
+                  <span className="muted decisor-nota">
+                    Empieza con el texto de la {actual.numero}, para cambiar lo que cambie.
+                  </span>
+                  <button
+                    className="secondary-button"
+                    onClick={() => setBorradorSustituta(borradorVacio())}
+                    type="button"
+                  >
+                    <Icon name="eraser" /> Empezar en blanco
+                  </button>
+                </div>
+                <CamposDeDecision
+                  borrador={borradorSustituta}
+                  cambiar={(cambiado) => {
+                    setBorradorSustituta(cambiado)
+                    setErrorBaja('')
+                  }}
+                  idDeTemas="decisor-temas-sustituta"
+                  temas={temas}
+                />
+              </>
+            ) : (
+              <>
+                <input
+                  aria-label="Buscar la decision que la sustituye"
+                  onChange={(evento) => setBusquedaSustituta(evento.target.value)}
+                  placeholder="Buscar por texto o por numero"
+                  type="search"
+                  value={busquedaSustituta}
+                />
+                {candidatasASustituir.length === 0 ? (
+                  <p className="muted">
+                    No hay ninguna otra decision activa. Escribe aqui la que la sustituye.
+                  </p>
+                ) : candidatasVisibles.length === 0 ? (
+                  <p className="muted">No hay decisiones activas que coincidan.</p>
+                ) : (
+                  <ul className="decisor-lista retirada-candidatas">
+                    {candidatasVisibles.map((fila) => (
+                      <li key={fila.id}>
+                        <button
+                          aria-pressed={sustituta === fila.id}
+                          className={sustituta === fila.id ? 'active' : ''}
+                          onClick={() => {
+                            setSustituta(fila.id)
+                            setErrorBaja('')
+                          }}
+                          type="button"
+                        >
+                          <span className="decisor-numero">{fila.numero}</span>
+                          <span className="decisor-resumen">
+                            <strong>{fila.decidido}</strong>
+                            <span>
+                              {fila.tema} · {formatearFecha(fila.fecha)}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+
+            {errorBaja ? <p className="form-error">{errorBaja}</p> : null}
+
+            <div className="modal-actions">
+              <button
+                className="secondary-button"
+                disabled={inactivando}
+                onClick={() => setRetirando(false)}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button disabled={inactivando} onClick={retirar} type="button">
+                {inactivando
+                  ? 'Escribiendo...'
+                  : comoSustituye === 'nueva'
+                    ? `Escribir la nueva y retirar la ${actual.numero}`
+                    : `Retirar la ${actual.numero}`}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {mostrarImport ? (
         <div className="modal-backdrop">
