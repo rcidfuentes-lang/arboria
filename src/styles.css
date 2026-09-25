@@ -2040,6 +2040,9 @@ h2 {
 
 .modal-actions {
   display: flex;
+  /* El aviso de conflicto trae tres botones y no dos, y en una pantalla
+     estrecha se salian de la caja. */
+  flex-wrap: wrap;
   gap: 0.6rem;
   justify-content: flex-end;
 }
