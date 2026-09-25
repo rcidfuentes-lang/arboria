@@ -68,6 +68,14 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
+/**
+ * Cuantas excepciones seguidas se aguantan antes de dejar de reintentar. Tres
+ * porque lo que se cubre es el tropiezo —una peticion que revienta— y no una
+ * caida larga: reintentar sin fin cada 900 ms seria aporrear el servidor, y
+ * ademas taparia el problema en vez de contarlo.
+ */
+const INTENTOS_ANTES_DE_RENDIRSE = 3
+
 function localStorageKey(projectId: string) {
   return `arboria:roadmap-project:${projectId}`
 }
@@ -168,6 +176,15 @@ export function ProjectList({ session }: ProjectListProps) {
   const proyectoEnPantalla = useRef<string | null>(null)
   /** Nunca dos escrituras del mismo proyecto a la vez: se pisarian el sello. */
   const guardando = useRef(false)
+  /** Excepciones seguidas al guardar. Se pone a cero en cuanto una sale bien. */
+  const intentosFallidos = useRef(0)
+  /**
+   * Sube uno cada vez que hay que volver a programar el guardado sin que haya
+   * cambiado nada mas. Hace falta porque si el estado ya era 'local' —porque
+   * se tecleo durante el vuelo— volver a ponerlo en 'local' no es un cambio, y
+   * el efecto no correria: el reintento se quedaria sin programar.
+   */
+  const [reintento, setReintento] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
   const [projectImportText, setProjectImportText] = useState('')
   const [showProjectImport, setShowProjectImport] = useState(false)
@@ -511,6 +528,7 @@ export function ProjectList({ session }: ProjectListProps) {
 
         const updatedProject = data as RoadmapProject
         const resuelto = resolverGuardado(documentoEnviado, enPantalla, updatedProject)
+        intentosFallidos.current = 0
 
         // El sello es siempre el del servidor, y el texto el que corresponda: la
         // cache queda con la version de arriba y con lo que hay escrito, que es
@@ -537,6 +555,31 @@ export function ProjectList({ session }: ProjectListProps) {
         // toca. Lo que quede pendiente de este ya esta en su cache con el sello
         // bueno, asi que sube solo la proxima vez que se abra.
         if (sigueEnPantalla) setSyncStatus(resuelto.estado)
+      } catch (fallo) {
+        // Aqui solo se llega si algo revienta de verdad: supabase-js devuelve
+        // los errores de red en `error`, no los lanza. Antes esto dejaba el
+        // indicador clavado en "Guardando" para siempre —el estado se habia
+        // puesto en 'syncing' y ya no lo movia nadie— y no se volvia a
+        // intentar hasta que se tecleara otra cosa.
+        if (proyectoEnPantalla.current !== activeProject.id) return
+
+        intentosFallidos.current += 1
+        const motivo = fallo instanceof Error ? fallo.message : 'error inesperado'
+
+        if (intentosFallidos.current >= INTENTOS_ANTES_DE_RENDIRSE) {
+          setSyncError(
+            `No se ha podido guardar despues de ${INTENTOS_ANTES_DE_RENDIRSE} intentos (${motivo}). ` +
+              'Lo escrito sigue en este navegador; al volver a abrir el proyecto se retoma.',
+          )
+          setSyncStatus('error')
+          return
+        }
+
+        // Queda pendiente, que es la verdad —hay cosas sin subir—, y se vuelve
+        // a programar sin esperar a que se teclee nada.
+        setSyncError(`Ha fallado un intento de guardado (${motivo}). Se reintenta.`)
+        setSyncStatus('local')
+        setReintento((n) => n + 1)
       } finally {
         // El candado se suelta pase lo que pase: por exito, por error de red,
         // por conflicto, y tambien si algo de aqui dentro revienta. Si se
@@ -547,7 +590,7 @@ export function ProjectList({ session }: ProjectListProps) {
     }, 900)
 
     return () => window.clearTimeout(timeoutId)
-  }, [activeProject, syncStatus])
+  }, [activeProject, syncStatus, reintento])
 
   async function handleDeleteProject(project: RoadmapProject) {
     // Borrar una fase ya preguntaba; borrar el proyecto entero, no. Y aqui se
