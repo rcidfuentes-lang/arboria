@@ -982,10 +982,20 @@ export function RoadmapEditor({
           >
             {node.children.length === 0 ? null : <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />}
           </button>
-          <button className="file-name" onClick={() => selectNode(node)} type="button">
-            <span className={`state-dot ${node.status}`} />
+          {/* El title lleva el id, el titulo y el estado. En el arbol de Songplay
+              98 de 143 titulos salen cortados a lo ancho por defecto, y sin esto
+              no habia forma de leer el que se cortaba sin seleccionar la fase.
+              El estado va aqui tambien porque el punto es lo unico que lo dice y
+              es un circulo de ocho pixeles sin leyenda en ninguna pantalla. */}
+          <button
+            className="file-name"
+            onClick={() => selectNode(node)}
+            title={`${node.id || 'sin-id'} — ${node.title || tituloPorDefecto} · ${statusLabel(node.status)}`}
+            type="button"
+          >
+            <span className={`state-dot ${node.status}`} title={statusLabel(node.status)} />
             <strong>{node.id || 'sin-id'}</strong>
-            <span>{node.title || 'Nueva fase'}</span>
+            <span>{node.title || tituloPorDefecto}</span>
           </button>
           <span className="progress-chip" title={`${progress}% completado`}>{progress}%</span>
           <button aria-label="Copiar fase" className="copy-button" onClick={() => copyText(nodeMarkdown(node))} title="Copiar fase" type="button">
