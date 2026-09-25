@@ -96,33 +96,46 @@ const PROYECTO_OTRO = randomUUID()
 proyectos.set(PROYECTO_SONGPLAY, { documento: SONGPLAY, owner_id: RUBEN })
 proyectos.set(PROYECTO_OTRO, { documento: OTRO, owner_id: RUBEN })
 
-// Tres decisiones de Songplay: dos activas y una inactiva sustituida por otra,
-// y una de las activas con una correccion encima. Es el minimo que ejercita
-// toda la forma del documento: numeracion, inactivacion por numero y rastro.
+// Cuatro decisiones de Songplay. Es el minimo que ejercita toda la forma del
+// documento: numeracion, rastro, y los tres casos que ahora conviven —una
+// inactiva sustituida por otra decision, una activa recogida en una norma, y
+// una inactiva a la que la sustituye su norma en vez de otra decision.
 const D1 = randomUUID()
 const D2 = randomUUID()
 const D3 = randomUUID()
+const D4 = randomUUID()
 decisiones.set(PROYECTO_SONGPLAY, [
   {
     id: D1, numero: 1, decidido: 'El decisor va en tabla propia.',
     fecha: '2026-09-20', motivo: 'Los bytes de /api/roadmap no se tocan.',
-    tema: 'arquitectura', detalle: null, nodo_id: null, estado: 'inactiva',
+    tema: 'arquitectura', detalle: null, nodo_id: null,
+    norma_documento: null, norma_apartado: null, estado: 'inactiva',
     motivo_inactivacion: 'La 3 lo dice mejor.', sustituida_por: D3,
     created_at: '2026-09-20T10:00:00+00:00', updated_at: '2026-09-20T11:00:00+00:00',
   },
   {
     id: D2, numero: 2, decidido: 'Las decisiones no se borran.',
     fecha: '2026-09-20', motivo: 'Una decision retirada sigue explicando el pasado.',
-    tema: 'proceso', detalle: 'acta del 20', nodo_id: 'SP', estado: 'activa',
+    tema: 'proceso', detalle: 'acta del 20', nodo_id: 'SP',
+    norma_documento: 'docs/SP3-canon.md', norma_apartado: '§7.5', estado: 'activa',
     motivo_inactivacion: null, sustituida_por: null,
     created_at: '2026-09-20T10:05:00+00:00', updated_at: '2026-09-20T12:00:00+00:00',
   },
   {
     id: D3, numero: 3, decidido: 'Tabla propia, con clave ajena a la sustituta.',
     fecha: '2026-09-20', motivo: 'Asi la sustituta existe de verdad.',
-    tema: 'arquitectura', detalle: null, nodo_id: null, estado: 'activa',
+    tema: 'arquitectura', detalle: null, nodo_id: null,
+    norma_documento: null, norma_apartado: null, estado: 'activa',
     motivo_inactivacion: null, sustituida_por: null,
     created_at: '2026-09-20T10:10:00+00:00', updated_at: '2026-09-20T10:10:00+00:00',
+  },
+  {
+    id: D4, numero: 4, decidido: 'Los informes llevan la cabecera de la norma.',
+    fecha: '2026-06-02', motivo: 'Sin cabecera no se sabe bajo que regla se escribio.',
+    tema: 'proceso', detalle: null, nodo_id: null,
+    norma_documento: 'docs/SP3-canon.md', norma_apartado: '§9.1', estado: 'inactiva',
+    motivo_inactivacion: 'Ya lo dice el canon.', sustituida_por: null,
+    created_at: '2026-09-20T10:15:00+00:00', updated_at: '2026-09-20T13:00:00+00:00',
   },
 ])
 rastro.set(D1, [
@@ -330,6 +343,9 @@ function documentoDeDecisiones(project_id) {
       tema: fila.tema,
       detalle: fila.detalle,
       nodo: fila.nodo_id,
+      norma: fila.norma_documento
+        ? { documento: fila.norma_documento, apartado: fila.norma_apartado }
+        : null,
       estado: fila.estado,
       inactivacion:
         fila.estado === 'inactiva'
@@ -954,9 +970,9 @@ console.log('\nEl decisor')
 
   const todas = await leer({})
   const documento = JSON.parse(todas.texto)
-  comprobar('sin filtros vienen las tres', documento.decisiones.length === 3)
+  comprobar('sin filtros vienen las cuatro', documento.decisiones.length === 4)
   comprobar('y en orden de numero',
-    documento.decisiones.map((d) => d.numero).join(',') === '1,2,3')
+    documento.decisiones.map((d) => d.numero).join(',') === '1,2,3,4')
   comprobar('con el proyecto al que da acceso el token',
     documento.project.id === SONGPLAY.project.id, documento.project.id)
   comprobar('schemaVersion lo pone el normalizador', documento.schemaVersion === 1)
@@ -982,6 +998,58 @@ console.log('\nEl decisor')
   const activas = JSON.parse((await leer({ estado: 'activa' })).texto)
   comprobar('el filtro por estado deja solo las activas',
     activas.decisiones.map((d) => d.numero).join(',') === '2,3')
+
+  // La norma: lo que el conector tiene que dejar ver para que un agente pueda
+  // preguntar que decisiones dependen de un documento antes de enmendarlo.
+  comprobar('una decision activa trae la norma que la recoge',
+    documento.decisiones[1].norma !== null &&
+      documento.decisiones[1].norma.documento === 'docs/SP3-canon.md' &&
+      documento.decisiones[1].norma.apartado === '§7.5')
+  comprobar('y una que no esta en ninguna norma la trae nula',
+    documento.decisiones[2].norma === null)
+  comprobar('el apartado puede faltar sin que falte la norma',
+    JSON.parse((await leer({ numero: 4 })).texto).decisiones[0].norma.apartado === '§9.1')
+
+  const porNorma = JSON.parse((await leer({ norma: 'DOCS/sp3-CANON.md' })).texto)
+  comprobar('el filtro por documento no distingue mayusculas',
+    porNorma.decisiones.map((d) => d.numero).join(',') === '2,4')
+
+  const deOtroDocumento = JSON.parse((await leer({ norma: 'docs/otro.md' })).texto)
+  comprobar('y un documento que no recoge nada devuelve la lista vacia',
+    deOtroDocumento.decisiones.length === 0)
+
+  const recogidas = JSON.parse((await leer({ recogida: true })).texto)
+  comprobar('recogida true deja las que estan en una norma',
+    recogidas.decisiones.map((d) => d.numero).join(',') === '2,4')
+
+  const sinRecoger = JSON.parse((await leer({ recogida: false })).texto)
+  comprobar('recogida false deja las que no estan en ninguna',
+    sinRecoger.decisiones.map((d) => d.numero).join(',') === '1,3')
+
+  const quedaPorEscribir = JSON.parse(
+    (await leer({ estado: 'activa', recogida: false })).texto,
+  )
+  comprobar('y cruzado con el estado contesta "que queda por escribir"',
+    quedaPorEscribir.decisiones.map((d) => d.numero).join(',') === '3')
+
+  const recogidaRara = await leer({ recogida: 'si' })
+  comprobar('un "recogida" que no es booleano se dice en vez de adivinarlo',
+    recogidaRara.esError && recogidaRara.texto.includes('true o false'),
+    recogidaRara.texto)
+
+  // La regla de lectura que la descripcion de la herramienta promete: si
+  // sustituida_por viene nulo, lo que ocupa su sitio es la norma.
+  const porNormaRetirada = JSON.parse((await leer({ numero: 4 })).texto).decisiones[0]
+  comprobar('una inactiva sin sustituida_por deja ver que la recoge su norma',
+    porNormaRetirada.estado === 'inactiva' &&
+      porNormaRetirada.inactivacion.sustituida_por === null &&
+      porNormaRetirada.inactivacion.motivo === 'Ya lo dice el canon.' &&
+      porNormaRetirada.norma.documento === 'docs/SP3-canon.md')
+
+  comprobar('la descripcion de leer_decisiones habla de la norma',
+    (await (await pedirMcp({ token: DEL_DECISOR, ...legado('tools/list', {}) })).json())
+      .result.tools.find((herramienta) => herramienta.name === 'leer_decisiones')
+      .description.includes('norma'))
 
   const una = JSON.parse((await leer({ numero: 2 })).texto)
   comprobar('el filtro por numero deja una', una.decisiones.length === 1 &&
@@ -1054,7 +1122,7 @@ console.log('\nNada escribe')
   comprobar(
     'y las decisiones guardadas tampoco',
     JSON.stringify(decisiones.get(PROYECTO_SONGPLAY)).includes('El decisor va en tabla propia.') &&
-      decisiones.get(PROYECTO_SONGPLAY).length === 3,
+      decisiones.get(PROYECTO_SONGPLAY).length === 4,
   )
 }
 

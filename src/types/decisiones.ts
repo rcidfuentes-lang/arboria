@@ -1,6 +1,23 @@
 export type DecisionEstado = 'activa' | 'inactiva'
 
 /**
+ * La norma que recoge una decision: el documento del repositorio y, si hace
+ * falta afinar, el apartado dentro de el.
+ *
+ * Vale en los dos estados y quiere decir cosas distintas en cada uno. En una
+ * decision activa dice "esto ya esta escrito ahi", que es lo que permite ver
+ * de un vistazo que parte del decisor esta recogida en una norma y que parte
+ * no. En una inactiva sin sustituta, es la norma la que ocupa su sitio.
+ *
+ * El apartado es opcional: hay documentos cortos que recogen una decision
+ * enteros. Lo que no puede haber es apartado sin documento.
+ */
+export type DecisionNorma = {
+  documento: string
+  apartado: string | null
+}
+
+/**
  * Una correccion, tal y como la guarda el disparador de la base. No se escribe
  * desde ningun sitio: aparece sola cuando una decision cambia.
  */
@@ -29,8 +46,15 @@ export type Decision = {
   detalle: string | null
   /** Id del nodo del roadmap al que toca, si toca alguno. */
   nodo: string | null
+  /** La norma que la recoge, si alguna la recoge. */
+  norma: DecisionNorma | null
   estado: DecisionEstado
-  /** Solo en las inactivas: por que se quito y cual ocupa su sitio. */
+  /**
+   * Solo en las inactivas: por que se quito y cual ocupa su sitio.
+   *
+   * "sustituida_por" nulo no es un hueco: quiere decir que lo que ocupa su
+   * sitio no es otra decision sino la norma, que esta en "norma".
+   */
   inactivacion: { motivo: string; sustituida_por: number | null } | null
   escrita_el: string
   corregida_el: string | null
@@ -67,6 +91,8 @@ export type DecisionFila = {
   tema: string
   detalle: string | null
   nodo_id: string | null
+  norma_documento: string | null
+  norma_apartado: string | null
   estado: DecisionEstado
   motivo_inactivacion: string | null
   sustituida_por: string | null

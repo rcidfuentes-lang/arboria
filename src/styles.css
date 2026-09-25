@@ -1730,6 +1730,15 @@ h2 {
   color: var(--muted);
 }
 
+/* La norma no es un estado, asi que no se pinta como "inactiva": es una nota
+   de que eso ya esta escrito en otro sitio. Con el color de la marca, que es
+   el que en esta pantalla quiere decir "esto esta bien". */
+.decisor-chip.norma {
+  background: var(--surface-soft);
+  border-color: var(--brand-strong);
+  color: var(--brand-strong);
+}
+
 .decisor-baja {
   background: var(--surface-soft);
   border: 1px solid var(--border);

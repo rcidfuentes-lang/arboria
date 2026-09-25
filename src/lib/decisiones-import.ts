@@ -24,7 +24,20 @@
  * - Un campo que no se reconoce es un error, no algo que se ignora. En un
  *   fichero escrito a mano, "por que" en vez de "motivo" es una errata, y
  *   tragarsela en silencio seria perder el motivo sin avisar.
+ * - "norma" es la que recoge la decision, y va en la entrada, no dentro de
+ *   "inactiva": es el mismo dato tanto si la decision se retira como si sigue
+ *   activa. Se escribe como objeto —{"documento": "...", "apartado": "..."}—
+ *   y no como la cadena "docs/SP3-canon.md §7.5", porque partir esa cadena
+ *   seria adivinar donde acaba el documento y empieza el apartado.
+ * - Con "norma" puesta, "inactiva" ya no necesita "sustituida_por": lo que
+ *   ocupa el sitio de la decision es la norma. Lo que sigue sin poder pasar es
+ *   retirar una decision sin decir que la sustituye.
  */
+
+export type NormaDeFichero = {
+  documento: string
+  apartado: string | null
+}
 
 export type EntradaDeFichero = {
   ref: string | null
@@ -34,13 +47,20 @@ export type EntradaDeFichero = {
   tema: string
   detalle: string | null
   nodo: string | null
-  inactiva: { motivo: string; sustituida_por: string | number } | null
+  norma: NormaDeFichero | null
+  /**
+   * "sustituida_por" nulo quiere decir que la retira su norma, que es la de la
+   * propia entrada. Sin norma, una entrada asi no llega hasta aqui.
+   */
+  inactiva: { motivo: string; sustituida_por: string | number | null } | null
 }
 
 export type DecisionExistente = {
   numero: number
   decidido: string
   fecha: string
+  /** La que tiene escrita ahora mismo, para saber si el fichero la cambia. */
+  norma: NormaDeFichero | null
 }
 
 export type PlanDeImportacion = {
@@ -48,10 +68,19 @@ export type PlanDeImportacion = {
   entradas: EntradaDeFichero[]
   /** Cuantas se escribiran. */
   nuevas: number
-  /** Las que ya estaban escritas, con el numero que tienen. */
-  yaEstaban: Array<{ posicion: number; numero: number; decidido: string }>
+  /**
+   * Las que ya estaban escritas, con el numero que tienen. "norma" dice si a
+   * esa, ademas de dejarla como esta, se le va a poner la norma del fichero.
+   */
+  yaEstaban: Array<{ posicion: number; numero: number; decidido: string; norma: boolean }>
   /** Cuantas quedaran inactivas al terminar. */
   inactivaciones: number
+  /**
+   * A cuantas de las que ya estaban escritas se les pondra la norma. Es lo
+   * unico que la importacion cambia de una decision que ya existe, aparte de
+   * inactivarla, y por eso se cuenta aparte y se avisa antes de escribir.
+   */
+  normasPuestas: number
 }
 
 export type ResultadoDeLectura =
@@ -66,10 +95,13 @@ const CAMPOS = new Set([
   'tema',
   'detalle',
   'nodo',
+  'norma',
   'inactiva',
 ])
 
 const CAMPOS_DE_INACTIVA = new Set(['motivo', 'sustituida_por'])
+
+const CAMPOS_DE_NORMA = new Set(['documento', 'apartado'])
 
 function esFechaDeVerdad(valor: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false
@@ -175,6 +207,43 @@ export function leerFicheroDeDecisiones(
     const detalle = comoTexto(entrada.detalle) || null
     const nodo = comoTexto(entrada.nodo) || null
 
+    let norma: NormaDeFichero | null = null
+    if (entrada.norma !== undefined && entrada.norma !== null) {
+      const cruda = entrada.norma
+      if (!cruda || typeof cruda !== 'object' || Array.isArray(cruda)) {
+        errores.push(
+          `${donde}: "norma" tiene que llevar dentro "documento" y, si hace falta, "apartado".`,
+        )
+      } else {
+        const bloque = cruda as Record<string, unknown>
+        const sobranDentro = Object.keys(bloque).filter((campo) => !CAMPOS_DE_NORMA.has(campo))
+        if (sobranDentro.length > 0) {
+          errores.push(
+            `${donde}: dentro de "norma" no reconozco ` +
+              `${sobranDentro.map((campo) => `"${campo}"`).join(', ')}. ` +
+              'Son "documento" y "apartado".',
+          )
+        }
+
+        const documento = comoTexto(bloque.documento)
+        const apartado = comoTexto(bloque.apartado) || null
+
+        if (!documento) {
+          // Un apartado suelto no se puede leer: "§7.5" de donde.
+          errores.push(
+            `${donde}: "norma" sin "documento". Es el documento que recoge la ` +
+              'decision, por ejemplo "docs/SP3-canon.md".',
+          )
+        } else if (documento.length > 400) {
+          errores.push(`${donde}: el "documento" de la norma se pasa de largo.`)
+        } else if (apartado && apartado.length > 200) {
+          errores.push(`${donde}: el "apartado" de la norma se pasa de largo.`)
+        } else {
+          norma = { documento, apartado }
+        }
+      }
+    }
+
     let ref: string | null = null
     if (entrada.ref !== undefined && entrada.ref !== null) {
       ref = comoTexto(entrada.ref)
@@ -204,10 +273,17 @@ export function leerFicheroDeDecisiones(
 
         const cual = bloque.sustituida_por
         if (cual === undefined || cual === null || cual === '') {
-          errores.push(
-            `${donde}: "inactiva" sin "sustituida_por". Una decision se quita ` +
-              'porque otra ocupa su sitio.',
-          )
+          // Sin "sustituida_por" la retira su norma, que es la de la entrada.
+          // Sin ninguna de las dos no se retira: la regla no cambia, solo
+          // admite una segunda forma de cumplirla.
+          if (!norma) {
+            errores.push(
+              `${donde}: "inactiva" sin "sustituida_por" y sin "norma". Una decision ` +
+                'se quita porque otra ocupa su sitio, o porque ya la recoge una norma.',
+            )
+          } else if (motivoBaja) {
+            inactiva = { motivo: motivoBaja, sustituida_por: null }
+          }
         } else if (typeof cual !== 'string' && typeof cual !== 'number') {
           errores.push(`${donde}: "sustituida_por" es el ref de otra entrada, o el numero de una ya escrita.`)
         } else if (motivoBaja) {
@@ -216,7 +292,7 @@ export function leerFicheroDeDecisiones(
       }
     }
 
-    entradas.push({ ref, decidido, fecha, motivo, tema, detalle, nodo, inactiva })
+    entradas.push({ ref, decidido, fecha, motivo, tema, detalle, nodo, norma, inactiva })
   })
 
   // Las sustituciones se comprueban con el fichero entero leido, porque una
@@ -227,6 +303,9 @@ export function leerFicheroDeDecisiones(
     const posicion = indice + 1
     const donde = `Entrada ${posicion} ("${entrada.decidido.slice(0, 48)}")`
     const cual = entrada.inactiva.sustituida_por
+
+    // La retira su norma: no hay nada que cruzar con el resto del fichero.
+    if (cual === null) return
 
     if (typeof cual === 'number') {
       if (!numerosExistentes.has(cual)) {
@@ -254,15 +333,29 @@ export function leerFicheroDeDecisiones(
   // Una decision ya escrita es la que dice lo mismo el mismo dia. Se deja como
   // esta: importar no pisa lo que ya hay. Vale para volver a intentar un
   // fichero que fallo a la mitad sin miedo a duplicar nada.
+  //
+  // Con una sola excepcion, la norma. Si la entrada trae una y la decision que
+  // ya existe tiene otra o no tiene ninguna, se le pone. Sin esa excepcion, el
+  // camino natural para marcar cien decisiones de golpe —exportar, anadir la
+  // norma, reimportar— no haria nada, porque las cien se contarian como ya
+  // escritas. Nunca al reves: una entrada sin norma no borra la que hubiera.
   const yaEstaban: PlanDeImportacion['yaEstaban'] = []
   const claveExistente = new Map(
-    existentes.map((fila) => [`${fila.fecha}|${fila.decidido.trim()}`, fila.numero]),
+    existentes.map((fila) => [`${fila.fecha}|${fila.decidido.trim()}`, fila]),
   )
   entradas.forEach((entrada, indice) => {
-    const numero = claveExistente.get(`${entrada.fecha}|${entrada.decidido}`)
-    if (numero !== undefined) {
-      yaEstaban.push({ posicion: indice + 1, numero, decidido: entrada.decidido })
-    }
+    const fila = claveExistente.get(`${entrada.fecha}|${entrada.decidido}`)
+    if (!fila) return
+    const cambiaLaNorma =
+      entrada.norma !== null &&
+      (entrada.norma.documento !== fila.norma?.documento ||
+        entrada.norma.apartado !== (fila.norma?.apartado ?? null))
+    yaEstaban.push({
+      posicion: indice + 1,
+      numero: fila.numero,
+      decidido: entrada.decidido,
+      norma: cambiaLaNorma,
+    })
   })
 
   return {
@@ -272,6 +365,7 @@ export function leerFicheroDeDecisiones(
       nuevas: entradas.length - yaEstaban.length,
       yaEstaban,
       inactivaciones: entradas.filter((entrada) => entrada.inactiva).length,
+      normasPuestas: yaEstaban.filter((fila) => fila.norma).length,
     },
   }
 }
@@ -296,6 +390,23 @@ export const ejemploDeFichero = `{
       "inactiva": {
         "motivo": "Cambiaria los bytes que ya consume Songplay.",
         "sustituida_por": "tabla-propia"
+      }
+    },
+    {
+      "decidido": "Los informes llevan la cabecera de la norma.",
+      "fecha": "2026-06-02",
+      "motivo": "Sin cabecera no se sabe bajo que regla se escribio.",
+      "tema": "proceso",
+      "norma": { "documento": "docs/SP3-canon.md", "apartado": "§7.5" }
+    },
+    {
+      "decidido": "Un informe se cierra diciendo que se ha cambiado.",
+      "fecha": "2026-06-02",
+      "motivo": "Un informe sin cierre no se puede verificar.",
+      "tema": "proceso",
+      "norma": { "documento": "docs/SP3-canon.md", "apartado": "§7.6" },
+      "inactiva": {
+        "motivo": "Ya lo dice el canon; la decision sobra."
       }
     }
   ]

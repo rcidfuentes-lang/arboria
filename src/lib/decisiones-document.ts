@@ -4,6 +4,7 @@ import type {
   DecisionEstado,
   DecisionFila,
   DecisionHistorialFila,
+  DecisionNorma,
   DecisionesDocument,
 } from '../types/decisiones'
 
@@ -44,6 +45,20 @@ function estado(valor: unknown): DecisionEstado {
   return valor === 'inactiva' ? 'inactiva' : 'activa'
 }
 
+/**
+ * La norma, o nada. Un apartado suelto sin documento no es media norma: es
+ * un dato que no se puede leer, asi que se descarta entero. La base ya lo
+ * rechaza al escribir; aqui se dice otra vez porque este modulo normaliza
+ * tambien lo que llega de fuera.
+ */
+function normalizeNorma(valor: unknown): DecisionNorma | null {
+  if (!valor || typeof valor !== 'object') return null
+  const norma = valor as Record<string, unknown>
+  const documento = textoOpcional(norma.documento)
+  if (!documento) return null
+  return { documento, apartado: textoOpcional(norma.apartado) }
+}
+
 function normalizeCorreccion(valor: unknown): DecisionCorreccion {
   const fila = (valor && typeof valor === 'object' ? valor : {}) as Record<string, unknown>
   return {
@@ -69,6 +84,7 @@ function normalizeDecision(valor: unknown): Decision {
     tema: texto(fila.tema),
     detalle: textoOpcional(fila.detalle),
     nodo: textoOpcional(fila.nodo),
+    norma: normalizeNorma(fila.norma),
     estado: estado(fila.estado),
     // Una decision activa no arrastra inactivacion aunque venga en el origen:
     // la base no deja que las dos cosas convivan y aqui se dice igual.
@@ -167,6 +183,9 @@ export function documentoDesdeFilas(
       tema: fila.tema,
       detalle: fila.detalle,
       nodo: fila.nodo_id,
+      norma: fila.norma_documento
+        ? { documento: fila.norma_documento, apartado: fila.norma_apartado }
+        : null,
       estado: fila.estado,
       inactivacion:
         fila.estado === 'inactiva'

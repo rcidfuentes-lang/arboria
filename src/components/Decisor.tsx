@@ -54,6 +54,22 @@ const opcionesDeFiltro: { valor: FiltroDeEstado; etiqueta: string }[] = [
   { valor: 'inactivas', etiqueta: 'Inactivas' },
 ]
 
+/**
+ * El otro eje: si la decision esta recogida en una norma o no.
+ *
+ * Es un filtro aparte y no tres opciones mas del de estado porque son dos
+ * preguntas distintas que se cruzan. "Activas y sin norma" es justo la lista
+ * que hace falta para saber que queda por escribir, y con un solo grupo de
+ * botones esa pregunta no se puede hacer.
+ */
+type FiltroDeNorma = 'todas' | 'con' | 'sin'
+
+const opcionesDeNorma: { valor: FiltroDeNorma; etiqueta: string }[] = [
+  { valor: 'todas', etiqueta: 'Todas' },
+  { valor: 'con', etiqueta: 'En una norma' },
+  { valor: 'sin', etiqueta: 'Sin norma' },
+]
+
 type Borrador = {
   decidido: string
   fecha: string
@@ -61,6 +77,8 @@ type Borrador = {
   tema: string
   detalle: string
   nodo: string
+  normaDocumento: string
+  normaApartado: string
 }
 
 const hoy = () => new Date().toISOString().slice(0, 10)
@@ -72,6 +90,8 @@ const borradorVacio = (): Borrador => ({
   tema: '',
   detalle: '',
   nodo: '',
+  normaDocumento: '',
+  normaApartado: '',
 })
 
 function borradorDe(fila: DecisionFila): Borrador {
@@ -82,17 +102,25 @@ function borradorDe(fila: DecisionFila): Borrador {
     tema: fila.tema,
     detalle: fila.detalle ?? '',
     nodo: fila.nodo_id ?? '',
+    normaDocumento: fila.norma_documento ?? '',
+    normaApartado: fila.norma_apartado ?? '',
   }
 }
 
 /**
  * El punto de partida de la decision que sustituye a otra: lo que decia la
  * vieja, con la fecha de hoy. Casi siempre la nueva es la vieja con un cambio,
- * y copiarla a mano para cambiar una linea es trabajo que no dice nada. La
- * fecha no se hereda porque la fecha es la del hecho, y el hecho es de hoy.
+ * y copiarla a mano para cambiar una linea es trabajo que no dice nada.
+ *
+ * Dos cosas no se heredan, y por la misma razon: no son opiniones sino hechos
+ * sobre el mundo. La fecha es la del hecho, y el hecho es de hoy. Y la norma
+ * dice que un documento de fuera recoge esto; si la vieja estaba en §7.5, ese
+ * apartado sigue diciendo lo de la vieja hasta que alguien lo enmiende, asi
+ * que heredarlo seria firmar por la nueva algo que todavia no es verdad. El
+ * campo esta ahi para escribirlo cuando lo sea.
  */
 function borradorHeredado(fila: DecisionFila): Borrador {
-  return { ...borradorDe(fila), fecha: hoy() }
+  return { ...borradorDe(fila), fecha: hoy(), normaDocumento: '', normaApartado: '' }
 }
 
 function mismoBorrador(uno: Borrador, otro: Borrador) {
@@ -102,7 +130,9 @@ function mismoBorrador(uno: Borrador, otro: Borrador) {
     uno.motivo === otro.motivo &&
     uno.tema === otro.tema &&
     uno.detalle === otro.detalle &&
-    uno.nodo === otro.nodo
+    uno.nodo === otro.nodo &&
+    uno.normaDocumento === otro.normaDocumento &&
+    uno.normaApartado === otro.normaApartado
   )
 }
 
@@ -111,11 +141,24 @@ function faltaAlgo(borrador: Borrador) {
   if (!borrador.fecha) return 'Pon la fecha en que se decidio.'
   if (!borrador.motivo.trim()) return 'Escribe por que.'
   if (!borrador.tema.trim()) return 'Pon un tema, para poder buscarla luego.'
+  // Un apartado sin documento no se puede leer: "§7.5" de donde. La base lo
+  // rechaza; aqui se dice antes y con palabras.
+  if (borrador.normaApartado.trim() && !borrador.normaDocumento.trim()) {
+    return 'Pon el documento de la norma, no solo el apartado.'
+  }
   return ''
 }
 
-/** Lo que se manda a la base: lo mismo, recortado y con los vacios a nulo. */
+/**
+ * Lo que se manda a la base: lo mismo, recortado y con los vacios a nulo.
+ *
+ * Habla como el documento —"nodo", "norma"— y no como las columnas, porque asi
+ * es como lo espera inactivar_decision cuando la sustituta se escribe entera.
+ * El paso a nombres de columna lo hace quien inserta, que es el unico que
+ * tiene que saberselos.
+ */
 function comoSeEscribe(borrador: Borrador) {
+  const documento = borrador.normaDocumento.trim()
   return {
     decidido: borrador.decidido.trim(),
     fecha: borrador.fecha,
@@ -123,7 +166,16 @@ function comoSeEscribe(borrador: Borrador) {
     tema: borrador.tema.trim(),
     detalle: borrador.detalle.trim() || null,
     nodo: borrador.nodo.trim() || null,
+    norma: documento
+      ? { documento, apartado: borrador.normaApartado.trim() || null }
+      : null,
   }
+}
+
+/** "docs/SP3-canon.md §7.5", o solo el documento si no hay apartado. */
+function textoDeNorma(documento: string | null, apartado: string | null) {
+  if (!documento) return ''
+  return apartado ? `${documento} ${apartado}` : documento
 }
 
 function formatearFecha(valor: string) {
@@ -143,6 +195,8 @@ const nombreDelCampo: Record<string, string> = {
   tema: 'Tema',
   detalle: 'Detalle',
   nodo_id: 'Fase del roadmap',
+  norma_documento: 'Norma que la recoge',
+  norma_apartado: 'Apartado de la norma',
   estado: 'Estado',
   motivo_inactivacion: 'Motivo de la inactivacion',
   sustituida_por: 'Decision que la sustituye',
@@ -239,6 +293,27 @@ function CamposDeDecision({
           />
         </label>
       </div>
+
+      {/* La norma que la recoge. Ponerla aqui, y no dentro de la retirada, es
+          lo que permite decir "esto ya esta escrito" sin retirar la decision. */}
+      <div className="decisor-fila">
+        <label className="decisor-campo">
+          Norma que la recoge
+          <input
+            onChange={(evento) => cambiar({ ...borrador, normaDocumento: evento.target.value })}
+            placeholder="docs/SP3-canon.md, si ya esta escrita. Opcional."
+            value={borrador.normaDocumento}
+          />
+        </label>
+        <label className="decisor-campo">
+          Apartado
+          <input
+            onChange={(evento) => cambiar({ ...borrador, normaApartado: evento.target.value })}
+            placeholder="§7.5. Opcional."
+            value={borrador.normaApartado}
+          />
+        </label>
+      </div>
     </>
   )
 }
@@ -251,6 +326,7 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
   const [aviso, setAviso] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const [filtro, setFiltro] = useState<FiltroDeEstado>('todas')
+  const [filtroNorma, setFiltroNorma] = useState<FiltroDeNorma>('todas')
   const [seleccionada, setSeleccionada] = useState<string | null>(null)
   const [escribiendoNueva, setEscribiendoNueva] = useState(false)
   const [borrador, setBorrador] = useState<Borrador>(borradorVacio)
@@ -261,7 +337,8 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
   const [errorBaja, setErrorBaja] = useState('')
   const [inactivando, setInactivando] = useState(false)
   const [motivoBaja, setMotivoBaja] = useState('')
-  const [comoSustituye, setComoSustituye] = useState<'nueva' | 'existente'>('nueva')
+  const [comoSustituye, setComoSustituye] = useState<'nueva' | 'existente' | 'norma'>('nueva')
+  const [normaBaja, setNormaBaja] = useState({ documento: '', apartado: '' })
   const [borradorSustituta, setBorradorSustituta] = useState<Borrador>(borradorVacio)
   const [sustituta, setSustituta] = useState('')
   const [busquedaSustituta, setBusquedaSustituta] = useState('')
@@ -332,6 +409,8 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     return decisiones.filter((fila) => {
       if (filtro === 'activas' && fila.estado !== 'activa') return false
       if (filtro === 'inactivas' && fila.estado !== 'inactiva') return false
+      if (filtroNorma === 'con' && !fila.norma_documento) return false
+      if (filtroNorma === 'sin' && fila.norma_documento) return false
       if (!texto) return true
       return [
         fila.decidido,
@@ -339,13 +418,16 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
         fila.tema,
         fila.detalle ?? '',
         fila.nodo_id ?? '',
+        // La norma entra en la busqueda para que "canon" encuentre las que
+        // apuntan al canon sin tener que cambiar de filtro.
+        textoDeNorma(fila.norma_documento, fila.norma_apartado),
         `${fila.numero}`,
       ]
         .join(' ')
         .toLowerCase()
         .includes(texto)
     })
-  }, [busqueda, decisiones, filtro])
+  }, [busqueda, decisiones, filtro, filtroNorma])
 
   /**
    * El recuento dice lo que hay y, cuando no se esta viendo todo, tambien lo
@@ -354,9 +436,10 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
    */
   const recuento = useMemo(() => {
     const activas = decisiones.filter((fila) => fila.estado === 'activa').length
+    const enNorma = decisiones.filter((fila) => fila.norma_documento).length
     const total = `${decisiones.length} escritas${
       activas === decisiones.length ? '' : `, ${activas} activas`
-    }`
+    }${enNorma ? `, ${enNorma} en una norma` : ''}`
     return visibles.length === decisiones.length ? total : `${visibles.length} a la vista · ${total}`
   }, [decisiones, visibles])
 
@@ -425,6 +508,8 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
         tema: campos.tema,
         detalle: campos.detalle,
         nodo_id: campos.nodo,
+        norma_documento: campos.norma?.documento ?? null,
+        norma_apartado: campos.norma?.apartado ?? null,
       })
       .select('*')
       .single()
@@ -450,6 +535,21 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
       return
     }
 
+    // A una inactiva a la que la sustituye su norma, quitarle el documento la
+    // dejaria retirada sin decir que ocupa su sitio. La base lo rechaza; aqui
+    // se dice con palabras en vez de dejar salir el fallo de Postgres.
+    if (
+      actual.estado === 'inactiva' &&
+      !actual.sustituida_por &&
+      !borrador.normaDocumento.trim()
+    ) {
+      setError(
+        'Esta decision esta retirada porque la recoge una norma. Si le quitas el ' +
+          'documento, deja de decir que ocupa su sitio.',
+      )
+      return
+    }
+
     setGuardando(true)
     setError('')
 
@@ -463,6 +563,8 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
         tema: campos.tema,
         detalle: campos.detalle,
         nodo_id: campos.nodo,
+        norma_documento: campos.norma?.documento ?? null,
+        norma_apartado: campos.norma?.apartado ?? null,
       })
       .eq('id', actual.id)
       .select('*')
@@ -496,6 +598,12 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
     setBorradorSustituta(borradorHeredado(actual))
     setSustituta('')
     setBusquedaSustituta('')
+    // Si la decision ya declaraba una norma, el modal parte de ella: lo mas
+    // probable es que se retire porque justamente esa norma ya la recoge.
+    setNormaBaja({
+      documento: actual.norma_documento ?? '',
+      apartado: actual.norma_apartado ?? '',
+    })
   }
 
   async function retirar() {
@@ -510,6 +618,11 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
       const falta = faltaAlgo(borradorSustituta)
       if (falta) {
         setErrorBaja(`En la decision que la sustituye: ${falta.toLowerCase()}`)
+        return
+      }
+    } else if (comoSustituye === 'norma') {
+      if (!normaBaja.documento.trim()) {
+        setErrorBaja('Di que documento la recoge, por ejemplo docs/SP3-canon.md.')
         return
       }
     } else if (!sustituta) {
@@ -529,6 +642,13 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
       por_que: motivoBaja.trim(),
       sustituta: comoSustituye === 'existente' ? sustituta : null,
       nueva: comoSustituye === 'nueva' ? comoSeEscribe(borradorSustituta) : null,
+      norma:
+        comoSustituye === 'norma'
+          ? {
+              documento: normaBaja.documento.trim(),
+              apartado: normaBaja.apartado.trim() || null,
+            }
+          : null,
     })
 
     setInactivando(false)
@@ -537,12 +657,19 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
       return
     }
 
-    const resumen = (data ?? {}) as { retirada?: number; sustituta?: number; creada?: boolean }
+    const resumen = (data ?? {}) as {
+      retirada?: number
+      sustituta?: number | null
+      norma?: string | null
+      creada?: boolean
+    }
     setRetirando(false)
     setAviso(
-      resumen.creada
-        ? `La decision ${resumen.retirada} queda inactiva. La sustituye la ${resumen.sustituta}, que se acaba de escribir.`
-        : `La decision ${resumen.retirada} queda inactiva. La sustituye la ${resumen.sustituta}.`,
+      resumen.norma
+        ? `La decision ${resumen.retirada} queda inactiva. La recoge ${resumen.norma}.`
+        : resumen.creada
+          ? `La decision ${resumen.retirada} queda inactiva. La sustituye la ${resumen.sustituta}, que se acaba de escribir.`
+          : `La decision ${resumen.retirada} queda inactiva. La sustituye la ${resumen.sustituta}.`,
     )
     cargar()
   }
@@ -574,6 +701,9 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
         numero: fila.numero,
         decidido: fila.decidido,
         fecha: fila.fecha,
+        norma: fila.norma_documento
+          ? { documento: fila.norma_documento, apartado: fila.norma_apartado }
+          : null,
       })),
     )
     if (leido.ok) setPlan(leido.plan)
@@ -605,13 +735,19 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
       return
     }
 
-    const resumen = (data ?? {}) as { escritas?: number; omitidas?: number; inactivadas?: number }
+    const resumen = (data ?? {}) as {
+      escritas?: number
+      omitidas?: number
+      inactivadas?: number
+      normas?: number
+    }
     setMostrarImport(false)
     setSeleccionada(null)
     setEscribiendoNueva(false)
     setAviso(
       `Importadas ${resumen.escritas ?? 0}` +
         `${resumen.inactivadas ? `, ${resumen.inactivadas} inactivadas` : ''}` +
+        `${resumen.normas ? `, ${resumen.normas} con su norma puesta` : ''}` +
         `${resumen.omitidas ? `, ${resumen.omitidas} ya estaban y se han dejado como estaban` : ''}.`,
     )
     cargar()
@@ -658,6 +794,19 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
               </button>
             ))}
           </div>
+          <div className="decisor-filtro" role="group" aria-label="Filtrar por norma">
+            {opcionesDeNorma.map((opcion) => (
+              <button
+                aria-pressed={filtroNorma === opcion.valor}
+                className={filtroNorma === opcion.valor ? 'active' : ''}
+                key={opcion.valor}
+                onClick={() => setFiltroNorma(opcion.valor)}
+                type="button"
+              >
+                {opcion.etiqueta}
+              </button>
+            ))}
+          </div>
           <button aria-label="Nueva decision" className="icon-only" onClick={abrirNueva} title="Nueva decision" type="button">
             <Icon name="plus" />
           </button>
@@ -692,9 +841,15 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
 
         {!cargando && decisiones.length > 0 && visibles.length === 0 ? (
           <p className="empty-state">
-            {busqueda.trim() || filtro === 'todas'
+            {/* Con un solo filtro puesto y sin buscar, se puede decir exactamente
+                que es lo que no hay. Con dos, o buscando, ya no. */}
+            {busqueda.trim() || (filtro !== 'todas' && filtroNorma !== 'todas')
               ? 'No hay decisiones que coincidan.'
-              : `No hay ninguna decision ${filtro === 'activas' ? 'activa' : 'inactiva'}.`}
+              : filtro !== 'todas'
+                ? `No hay ninguna decision ${filtro === 'activas' ? 'activa' : 'inactiva'}.`
+                : filtroNorma === 'con'
+                  ? 'Todavia no hay ninguna decision recogida en una norma.'
+                  : 'No queda ninguna decision fuera de una norma.'}
           </p>
         ) : null}
 
@@ -716,11 +871,18 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                     {fila.estado === 'inactiva' ? (
                       <span className="decisor-chip inactiva">inactiva</span>
                     ) : null}
+                    {/* Se ve barriendo la columna que decisiones ya estan
+                        escritas en una norma y cuales todavia no. */}
+                    {fila.norma_documento ? (
+                      <span className="decisor-chip norma">en norma</span>
+                    ) : null}
                     <span>
                       {fila.tema} · {formatearFecha(fila.fecha)}
-                      {fila.estado === 'inactiva'
-                        ? ` · la sustituye la ${numeroDe.get(fila.sustituida_por ?? '') ?? '?'}`
-                        : ''}
+                      {fila.estado !== 'inactiva'
+                        ? ''
+                        : fila.sustituida_por
+                          ? ` · la sustituye la ${numeroDe.get(fila.sustituida_por) ?? '?'}`
+                          : ` · la recoge ${textoDeNorma(fila.norma_documento, fila.norma_apartado)}`}
                     </span>
                   </span>
                 </span>
@@ -768,8 +930,15 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
             {actual?.estado === 'inactiva' ? (
               <div className="decisor-baja">
                 <p>
-                  <strong>Inactiva.</strong> La sustituye la decision{' '}
-                  {numeroDe.get(actual.sustituida_por ?? '') ?? '?'}.
+                  <strong>Inactiva.</strong>{' '}
+                  {actual.sustituida_por ? (
+                    <>La sustituye la decision {numeroDe.get(actual.sustituida_por) ?? '?'}.</>
+                  ) : (
+                    <>
+                      La recoge{' '}
+                      <code>{textoDeNorma(actual.norma_documento, actual.norma_apartado)}</code>.
+                    </>
+                  )}
                 </p>
                 <p className="muted">{actual.motivo_inactivacion}</p>
               </div>
@@ -873,8 +1042,8 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
             <div className="decisor-bloque-cabecera">
               <h2 id="titulo-retirada">Retirar la decision {actual.numero}</h2>
               <p className="modal-hint">
-                Se retira porque otra ocupa su sitio. Las dos cosas se hacen de una vez: si algo
-                falla no se escribe nada.
+                Se retira porque algo ocupa su sitio: otra decision, o la norma que ya la
+                recoge. Todo se hace de una vez: si algo falla no se escribe nada.
               </p>
             </div>
 
@@ -894,10 +1063,10 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
             </label>
 
             <div className="decisor-bloque-cabecera">
-              <h3>La decision que la sustituye</h3>
+              <h3>Que ocupa su sitio</h3>
             </div>
 
-            <div className="retirada-modos" role="group" aria-label="La decision que la sustituye">
+            <div className="retirada-modos" role="group" aria-label="Que ocupa su sitio">
               <button
                 aria-pressed={comoSustituye === 'nueva'}
                 className={comoSustituye === 'nueva' ? 'active' : 'secondary-button'}
@@ -919,6 +1088,17 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                 type="button"
               >
                 Elegir una que ya existe
+              </button>
+              <button
+                aria-pressed={comoSustituye === 'norma'}
+                className={comoSustituye === 'norma' ? 'active' : 'secondary-button'}
+                onClick={() => {
+                  setComoSustituye('norma')
+                  setErrorBaja('')
+                }}
+                type="button"
+              >
+                Apuntar a una norma
               </button>
             </div>
 
@@ -945,6 +1125,37 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                   idDeTemas="decisor-temas-sustituta"
                   temas={temas}
                 />
+              </>
+            ) : comoSustituye === 'norma' ? (
+              <>
+                <p className="muted decisor-nota">
+                  La decision deja de estar vigente porque lo que dice ya esta escrito como
+                  regla. No se borra: queda apuntando al documento que la recoge.
+                </p>
+                <div className="decisor-fila">
+                  <label className="decisor-campo">
+                    Documento
+                    <input
+                      onChange={(evento) => {
+                        setNormaBaja((norma) => ({ ...norma, documento: evento.target.value }))
+                        setErrorBaja('')
+                      }}
+                      placeholder="docs/SP3-canon.md"
+                      value={normaBaja.documento}
+                    />
+                  </label>
+                  <label className="decisor-campo">
+                    Apartado
+                    <input
+                      onChange={(evento) => {
+                        setNormaBaja((norma) => ({ ...norma, apartado: evento.target.value }))
+                        setErrorBaja('')
+                      }}
+                      placeholder="§7.5. Opcional."
+                      value={normaBaja.apartado}
+                    />
+                  </label>
+                </div>
               </>
             ) : (
               <>
@@ -1032,11 +1243,14 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
               <summary>Ver el formato, con un ejemplo</summary>
               <p className="modal-hint">
                 Obligatorios: <code>decidido</code>, <code>fecha</code> (AAAA-MM-DD),{' '}
-                <code>motivo</code> y <code>tema</code>. Opcionales: <code>detalle</code> y{' '}
-                <code>nodo</code>. Para retirar una decision, <code>inactiva</code> con su{' '}
-                <code>motivo</code> y <code>sustituida_por</code>, que es el{' '}
-                <code>ref</code> de otra entrada del mismo fichero o el numero de una
-                decision ya escrita.
+                <code>motivo</code> y <code>tema</code>. Opcionales: <code>detalle</code>,{' '}
+                <code>nodo</code> y <code>norma</code>, que es la que la recoge y se escribe{' '}
+                <code>{'{"documento": "docs/SP3-canon.md", "apartado": "§7.5"}'}</code> —el
+                apartado se puede dejar fuera—. Para retirar una decision,{' '}
+                <code>inactiva</code> con su <code>motivo</code> y una de dos cosas:{' '}
+                <code>sustituida_por</code>, que es el <code>ref</code> de otra entrada del
+                mismo fichero o el numero de una decision ya escrita, o nada, y entonces la
+                retira la <code>norma</code> de la propia entrada.
               </p>
               <pre>{ejemploDeFichero}</pre>
               <button className="secondary-button" onClick={() => revisar(ejemploDeFichero)} type="button">
@@ -1077,11 +1291,28 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                     {plan.yaEstaban.map((fila) => `la ${fila.numero}`).join(', ')}.
                   </p>
                 ) : null}
+                {/* Lo unico que la importacion cambia de una decision que ya
+                    existe. Se dice antes de escribir y con los numeros. */}
+                {plan.normasPuestas > 0 ? (
+                  <p>
+                    A <strong>{plan.normasPuestas}</strong> de esas se les pondra la norma que
+                    trae el fichero:{' '}
+                    {plan.yaEstaban
+                      .filter((fila) => fila.norma)
+                      .map((fila) => `la ${fila.numero}`)
+                      .join(', ')}
+                    . Queda en el rastro, como cualquier correccion.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
             <div className="modal-actions">
-              <button disabled={!plan || importando || plan.nuevas === 0} onClick={importar} type="button">
+              <button
+                disabled={!plan || importando || (plan.nuevas === 0 && plan.normasPuestas === 0)}
+                onClick={importar}
+                type="button"
+              >
                 {importando ? 'Importando...' : 'Importar'}
               </button>
               <button className="secondary-button" onClick={() => setMostrarImport(false)} type="button">

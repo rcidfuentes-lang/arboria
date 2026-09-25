@@ -43,8 +43,8 @@ export const INSTRUCCIONES =
   'exportacion de Arboria. leer_nodo devuelve una fase concreta con sus hijas, ' +
   'para no tener que traerse el documento entero cuando solo interesa una rama. ' +
   'leer_decisiones devuelve las decisiones que Ruben ha escrito en ese proyecto: ' +
-  'que se decidio, cuando, por que, y si sigue vigente o la sustituyo otra. ' +
-  'Ninguna herramienta escribe.'
+  'que se decidio, cuando, por que, si sigue vigente o ya no, y si alguna norma ' +
+  'del repositorio la recoge. Ninguna herramienta escribe.'
 
 // Codigos que el protocolo reserva, ademas de los de JSON-RPC.
 export const CODIGO_VERSION_NO_ADMITIDA = -32022
@@ -128,11 +128,18 @@ export const HERRAMIENTAS = [
       'Devuelve las decisiones que Ruben ha escrito en este proyecto: que se ' +
       'decidio con sus palabras, la fecha en que se decidio, el motivo, el tema, ' +
       'donde esta el detalle y a que fase del roadmap toca, si toca a alguna. ' +
-      'Cada decision esta activa o inactiva; una inactiva dice por que se quito y ' +
-      'el numero de la que ocupa su sitio. Si se corrigio alguna vez, "correcciones" ' +
-      'dice lo que decia antes. Sin argumentos devuelve todas, que es lo normal: ' +
-      'son pocas. Los filtros son para cuando ya se sabe que se busca, y si no ' +
-      'casa ninguna la lista vuelve vacia.',
+      'Si se corrigio alguna vez, "correcciones" dice lo que decia antes. ' +
+      'Cada decision trae ademas "norma": el documento del repositorio que la ' +
+      'recoge y, si lo hay, su apartado —por ejemplo {"documento": ' +
+      '"docs/SP3-canon.md", "apartado": "§7.5"}—, o null si no la recoge ' +
+      'ninguno. En una decision activa, "norma" quiere decir que eso ya esta ' +
+      'escrito como regla y que la decision y el documento tienen que decir lo ' +
+      'mismo. Cada decision esta activa o inactiva; una inactiva dice por que se ' +
+      'quito y que ocupa su sitio: si "inactivacion.sustituida_por" trae un ' +
+      'numero, es esa decision; si viene null, es su "norma" la que la recoge. ' +
+      'Sin argumentos devuelve todas, que es lo normal: son pocas. Los filtros ' +
+      'son para cuando ya se sabe que se busca, y si no casa ninguna la lista ' +
+      'vuelve vacia.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -152,6 +159,20 @@ export const HERRAMIENTAS = [
           description:
             'Por defecto "todas". Una decision inactiva sigue explicando por que se ' +
             'hizo lo que se hizo, asi que no se esconde salvo que se pida.',
+        },
+        norma: {
+          type: 'string',
+          description:
+            'Filtra por el documento que recoge la decision, entero y tal cual se ' +
+            'escribe: "docs/SP3-canon.md". No distingue mayusculas y no mira el ' +
+            'apartado. Sirve para preguntar que decisiones dependen de un documento ' +
+            'antes de enmendarlo. Implica que la decision tiene norma.',
+        },
+        recogida: {
+          type: 'boolean',
+          description:
+            'true deja solo las decisiones que alguna norma recoge; false, solo las ' +
+            'que no recoge ninguna, que es la pregunta "que queda por escribir".',
         },
       },
       additionalProperties: false,
@@ -282,6 +303,10 @@ async function ejecutar(
  * puede hacer en otro sitio, que es decidir de que proyecto son. Un filtro por
  * tema es una comodidad de lectura, no una frontera de permisos, y hacerlo
  * aqui deja una sola consulta y una sola forma de documento.
+ *
+ * Los dos filtros de norma contestan las dos preguntas que se hacen de verdad:
+ * "que decisiones dependen de este documento", antes de enmendarlo, y "que
+ * queda por escribir", que son las que no recoge ninguna norma.
  */
 async function decisiones(argumentos: unknown, contexto: Contexto, id: unknown): Promise<Salida> {
   const fuente = await contexto.fuente.decisiones()
@@ -293,6 +318,8 @@ async function decisiones(argumentos: unknown, contexto: Contexto, id: unknown):
     numero?: unknown
     tema?: unknown
     estado?: unknown
+    norma?: unknown
+    recogida?: unknown
   }
 
   const estado = typeof peticion.estado === 'string' ? peticion.estado : 'todas'
@@ -307,12 +334,31 @@ async function decisiones(argumentos: unknown, contexto: Contexto, id: unknown):
 
   const tema = typeof peticion.tema === 'string' ? peticion.tema.trim().toLowerCase() : ''
   const numero = typeof peticion.numero === 'number' ? peticion.numero : null
+  const norma = typeof peticion.norma === 'string' ? peticion.norma.trim().toLowerCase() : ''
+
+  // "recogida" se lee solo si viene como booleano de verdad. Un "false" de
+  // texto no se traduce a false en silencio: quien pregunta "que queda por
+  // escribir" y recibe todo lo contrario no tiene como darse cuenta.
+  const recogida = typeof peticion.recogida === 'boolean' ? peticion.recogida : null
+  if (peticion.recogida !== undefined && recogida === null) {
+    return textoDeHerramienta(
+      'El argumento "recogida" es true o false: true deja las decisiones que ' +
+        'recoge una norma, false las que no recoge ninguna.',
+      contexto.era,
+      id,
+      true,
+    )
+  }
 
   const documento = fuente.valor
   const filtradas = documento.decisiones.filter((decision) => {
     if (numero !== null && decision.numero !== numero) return false
     if (tema && decision.tema.toLowerCase() !== tema) return false
     if (estado !== 'todas' && decision.estado !== estado) return false
+    // Pedir un documento es pedir las que ese documento recoge, asi que una
+    // decision sin norma queda fuera sin necesidad de decirlo aparte.
+    if (norma && decision.norma?.documento.toLowerCase() !== norma) return false
+    if (recogida !== null && (decision.norma !== null) !== recogida) return false
     return true
   })
 
