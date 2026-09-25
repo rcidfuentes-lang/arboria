@@ -9,6 +9,7 @@ type IconName =
   | 'download'
   | 'eraser'
   | 'fileBranch'
+  | 'flag'
   | 'folderOpen'
   | 'gitMerge'
   | 'grip'
@@ -46,6 +47,8 @@ const paths: Record<IconName, string[]> = {
   download: ['M12 3v12', 'm7-7-7 7-7-7', 'M5 21h14'],
   eraser: ['m7 21-4-4L16 4a2.8 2.8 0 0 1 4 4L8 21H7Z', 'M14 7l3 3', 'M10 21h10'],
   fileBranch: ['M6 3v12', 'M18 9a3 3 0 1 0-3-3', 'M6 15a3 3 0 1 0 3 3', 'M15 6a9 9 0 0 0-9 9'],
+  /* Cerrar una fase es llegar a su meta, no aceptar un formulario. */
+  flag: ['M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z', 'M4 22V4'],
   folderOpen: ['M3 7h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z', 'M3 11h18'],
   gitMerge: ['M18 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M6 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', 'M6 21V6', 'M15 15c-4.5 0-9-3.5-9-9'],
   grip: ['M9 5h.01', 'M15 5h.01', 'M9 12h.01', 'M15 12h.01', 'M9 19h.01', 'M15 19h.01'],

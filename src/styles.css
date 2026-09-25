@@ -827,6 +827,16 @@ h2 {
   flex: 1 1 180px;
 }
 
+/* Un hueco con raya entre volver al listado y cerrar sesion. Estaban pegados,
+   con dos iconos de flecha, y uno sale del proyecto y el otro de la cuenta. */
+.barra-separador {
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+  flex: 0 0 auto;
+  margin: 0.15rem 0.3rem;
+  width: 0;
+}
+
 /* Proyectos y cerrar sesion, siempre al final de su linea. */
 .roadmap-bar > .toolbar-group:last-child {
   margin-left: auto;

@@ -1180,7 +1180,12 @@ export function RoadmapEditor({
           </>
         ) : null}
         <div className="toolbar-group">
-          <button aria-label="Volver a proyectos" className="icon-only secondary-button" onClick={onBack} title="Proyectos" type="button"><Icon name="folderOpen" /></button>
+          {/* Volver lleva flecha atras y no una carpeta abierta: la carpeta decia
+              "abrir algo" justo en el boton que cierra el proyecto. */}
+          <button aria-label="Volver a proyectos" className="icon-only secondary-button" onClick={onBack} title="Volver a proyectos" type="button"><Icon name="arrowLeft" /></button>
+          {/* Separado del anterior a proposito: uno sale del proyecto y el otro
+              de la cuenta, y estaban pegados con dos iconos de flecha. */}
+          <span className="barra-separador" aria-hidden="true" />
           <button aria-label="Cerrar sesion" className="icon-only secondary-button" onClick={onSignOut} title="Cerrar sesion" type="button"><Icon name="logOut" /></button>
         </div>
       </header>
@@ -1315,7 +1320,9 @@ export function RoadmapEditor({
                 <button className="secondary-button" onClick={() => openImport('append-to-selected')} title="Importar como subfases" type="button"><Icon name="upload" /> Importar debajo</button>
                 <button className="secondary-button" onClick={() => openImport('replace-selected')} title="Reemplazar esta rama" type="button"><Icon name="import" /> Reemplazar rama</button>
                 <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
-                <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase" type="button"><Icon name="check" /></button>
+                {/* Bandera y no check: esto no acepta nada, pone la fase en cerrada y
+                    escribe en el documento. El check queda para confirmar. */}
+                <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase (la pone en cerrada)" type="button"><Icon name="flag" /></button>
                 <button className="secondary-button" onClick={copySelectedJson} title="Copiar rama JSON" type="button"><Icon name="copy" /> Copiar JSON</button>
               </div>
               <div className="editor-fields no-print">
