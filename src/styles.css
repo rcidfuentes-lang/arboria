@@ -13,6 +13,11 @@
   --brand-strong: #067233;
   --danger: #a23030;
   --danger-soft: #fff1f1;
+  /* El ambar de "esto no esta mal, pero miralo". Ya existia en el indicador de
+     guardado local; ahora que lo usa tambien el aviso de fase desconocida,
+     vale la pena que sea un token y no dos veces el mismo numero. */
+  --aviso: #767526;
+  --aviso-soft: #f9fbec;
   --shadow: 0 18px 45px rgba(23, 49, 34, 0.1);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -387,8 +392,8 @@ h2 {
 }
 
 .sync-state.local {
-  background: #f9fbec;
-  color: #767526;
+  background: var(--aviso-soft);
+  color: var(--aviso);
 }
 
 .sync-state.syncing {
@@ -1794,6 +1799,21 @@ h2 {
   font-size: 0.8rem;
   font-weight: 600;
   gap: 0.3rem;
+}
+
+/* La fase que no esta en el arbol. No es un error —la decision se guarda
+   igual— asi que se avisa en ambar y no en rojo. */
+.campo-en-duda {
+  background: var(--aviso-soft);
+  border-color: var(--aviso);
+}
+
+.aviso-en-duda {
+  color: var(--aviso);
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
 }
 
 .decisor-campo input,

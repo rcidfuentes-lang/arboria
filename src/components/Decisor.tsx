@@ -39,6 +39,13 @@ import type { DecisionFila, DecisionHistorialFila } from '../types/decisiones'
 type DecisorProps = {
   projectId: string
   proyecto: { id: string; name: string }
+  /**
+   * Los ids de las fases del roadmap, solo para avisar. El decisor guarda la
+   * fase como texto y a proposito: no depende del arbol y una decision puede
+   * nombrar una fase que todavia no existe. Pero escribir "SP99.99" sin que
+   * nadie diga nada es otra cosa, asi que con esto se puede marcar en ambar.
+   */
+  fasesDelRoadmap: string[]
 }
 
 /**
@@ -220,14 +227,21 @@ function descargar(nombre: string, texto: string) {
 function CamposDeDecision({
   borrador,
   cambiar,
+  fasesDelRoadmap,
   idDeTemas,
   temas,
 }: {
   borrador: Borrador
   cambiar: (borrador: Borrador) => void
+  fasesDelRoadmap: string[]
   idDeTemas: string
   temas: string[]
 }) {
+  const fase = borrador.nodo.trim()
+  // Solo se avisa de lo que se ha escrito. Vacio es lo normal: la fase es
+  // opcional y hay decisiones que no tocan ninguna.
+  const faseDesconocida = fase.length > 0 && !fasesDelRoadmap.includes(fase)
+
   return (
     <>
       <label className="decisor-campo">
@@ -287,10 +301,16 @@ function CamposDeDecision({
         <label className="decisor-campo">
           Fase del roadmap
           <input
+            className={faseDesconocida ? 'campo-en-duda' : undefined}
             onChange={(evento) => cambiar({ ...borrador, nodo: evento.target.value })}
             placeholder="SP1.3, si toca alguna. Opcional."
             value={borrador.nodo}
           />
+          {faseDesconocida ? (
+            <span className="aviso-en-duda" role="status">
+              En el roadmap no hay ninguna fase <code>{fase}</code>. Se guarda igual.
+            </span>
+          ) : null}
         </label>
       </div>
 
@@ -318,7 +338,7 @@ function CamposDeDecision({
   )
 }
 
-export function Decisor({ projectId, proyecto }: DecisorProps) {
+export function Decisor({ projectId, proyecto, fasesDelRoadmap }: DecisorProps) {
   const [decisiones, setDecisiones] = useState<DecisionFila[]>([])
   const [historial, setHistorial] = useState<DecisionHistorialFila[]>([])
   const [cargando, setCargando] = useState(true)
@@ -964,6 +984,7 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
               <CamposDeDecision
                 borrador={borrador}
                 cambiar={setBorrador}
+                fasesDelRoadmap={fasesDelRoadmap}
                 idDeTemas="decisor-temas"
                 temas={temas}
               />
@@ -1128,6 +1149,7 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                     setBorradorSustituta(cambiado)
                     setErrorBaja('')
                   }}
+                  fasesDelRoadmap={fasesDelRoadmap}
                   idDeTemas="decisor-temas-sustituta"
                   temas={temas}
                 />

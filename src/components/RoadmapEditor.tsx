@@ -1184,7 +1184,11 @@ export function RoadmapEditor({
             </div>
           </section>
       ) : editorMode === 'decisor' ? (
-        <Decisor projectId={projectId} proyecto={document.project} />
+        <Decisor
+          fasesDelRoadmap={flatNodes.map(({ node }) => node.id)}
+          projectId={projectId}
+          proyecto={document.project}
+        />
       ) : (
         <section className="roadmap-body">
           <aside className="file-tree no-print">
