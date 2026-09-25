@@ -701,6 +701,7 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
         numero: fila.numero,
         decidido: fila.decidido,
         fecha: fila.fecha,
+        estado: fila.estado,
         norma: fila.norma_documento
           ? { documento: fila.norma_documento, apartado: fila.norma_apartado }
           : null,
@@ -739,16 +740,21 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
       escritas?: number
       omitidas?: number
       inactivadas?: number
+      ya_inactivas?: number
       normas?: number
     }
     setMostrarImport(false)
     setSeleccionada(null)
     setEscribiendoNueva(false)
+    // "ya estaban y se han dejado como estaban" era verdad cuando importar no
+    // tocaba nada de lo que ya habia. Ahora puede retirarlas, asi que decir
+    // que se han dejado como estaban seria mentir.
     setAviso(
       `Importadas ${resumen.escritas ?? 0}` +
-        `${resumen.inactivadas ? `, ${resumen.inactivadas} inactivadas` : ''}` +
+        `${resumen.inactivadas ? `, ${resumen.inactivadas} retiradas` : ''}` +
         `${resumen.normas ? `, ${resumen.normas} con su norma puesta` : ''}` +
-        `${resumen.omitidas ? `, ${resumen.omitidas} ya estaban y se han dejado como estaban` : ''}.`,
+        `${resumen.ya_inactivas ? `, ${resumen.ya_inactivas} ya estaban retiradas` : ''}` +
+        `${resumen.omitidas ? `, ${resumen.omitidas} ya estaban escritas` : ''}.`,
     )
     cargar()
   }
@@ -1250,7 +1256,9 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                 <code>inactiva</code> con su <code>motivo</code> y una de dos cosas:{' '}
                 <code>sustituida_por</code>, que es el <code>ref</code> de otra entrada del
                 mismo fichero o el numero de una decision ya escrita, o nada, y entonces la
-                retira la <code>norma</code> de la propia entrada.
+                retira la <code>norma</code> de la propia entrada. Si la entrada dice lo mismo
+                el mismo dia que una decision que ya esta escrita, es esa la que se retira; y
+                si ya estaba retirada, no se toca.
               </p>
               <pre>{ejemploDeFichero}</pre>
               <button className="secondary-button" onClick={() => revisar(ejemploDeFichero)} type="button">
@@ -1281,18 +1289,34 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
 
             {plan ? (
               <div className="decisor-aviso">
-                <p>
-                  Se escribiran <strong>{plan.nuevas}</strong> decision(es)
-                  {plan.inactivaciones > 0 ? `, ${plan.inactivaciones} de ellas inactivas` : ''}.
-                </p>
+                {plan.nuevas > 0 ? (
+                  <p>
+                    Se escribiran <strong>{plan.nuevas}</strong> decision(es)
+                    {plan.inactivaciones > 0 ? `, ${plan.inactivaciones} de ellas inactivas` : ''}.
+                  </p>
+                ) : (
+                  <p>No se escribira ninguna decision nueva.</p>
+                )}
                 {plan.yaEstaban.length > 0 ? (
                   <p className="muted">
-                    {plan.yaEstaban.length} ya estaban escritas y se dejan como estan:{' '}
+                    {plan.yaEstaban.length} ya estaban escritas:{' '}
                     {plan.yaEstaban.map((fila) => `la ${fila.numero}`).join(', ')}.
                   </p>
                 ) : null}
-                {/* Lo unico que la importacion cambia de una decision que ya
-                    existe. Se dice antes de escribir y con los numeros. */}
+
+                {/* Las dos cosas que la importacion le hace a una decision que
+                    ya existe. Se dicen antes de escribir y con los numeros,
+                    porque son escrituras sobre lo que ya estaba. */}
+                {plan.retiradas > 0 ? (
+                  <p>
+                    A <strong>{plan.retiradas}</strong> de esas se les retirara:{' '}
+                    {plan.yaEstaban
+                      .filter((fila) => fila.retirar)
+                      .map((fila) => `la ${fila.numero}`)
+                      .join(', ')}
+                    . Queda en el rastro, como cualquier correccion.
+                  </p>
+                ) : null}
                 {plan.normasPuestas > 0 ? (
                   <p>
                     A <strong>{plan.normasPuestas}</strong> de esas se les pondra la norma que
@@ -1304,12 +1328,29 @@ export function Decisor({ projectId, proyecto }: DecisorProps) {
                     . Queda en el rastro, como cualquier correccion.
                   </p>
                 ) : null}
+                {plan.yaInactivas > 0 ? (
+                  <p className="muted">
+                    {plan.yaInactivas} ya estaban retiradas y no se tocan:{' '}
+                    {plan.yaEstaban
+                      .filter((fila) => fila.yaInactiva)
+                      .map((fila) => `la ${fila.numero}`)
+                      .join(', ')}
+                    .
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
             <div className="modal-actions">
+              {/* Un fichero puede no traer ninguna decision nueva y aun asi
+                  tener trabajo que hacer: retirar las que ya estan escritas, o
+                  ponerles su norma. */}
               <button
-                disabled={!plan || importando || (plan.nuevas === 0 && plan.normasPuestas === 0)}
+                disabled={
+                  !plan ||
+                  importando ||
+                  (plan.nuevas === 0 && plan.normasPuestas === 0 && plan.retiradas === 0)
+                }
                 onClick={importar}
                 type="button"
               >

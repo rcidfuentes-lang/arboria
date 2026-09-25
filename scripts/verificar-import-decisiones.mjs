@@ -24,13 +24,21 @@ function comprobar(etiqueta, condicion, detalle = '') {
 }
 
 const YA_ESCRITAS = [
-  { numero: 1, decidido: 'Una que ya estaba escrita.', fecha: '2026-09-10', norma: null },
-  { numero: 2, decidido: 'Y otra.', fecha: '2026-09-11', norma: null },
+  { numero: 1, decidido: 'Una que ya estaba escrita.', fecha: '2026-09-10', estado: 'activa', norma: null },
+  { numero: 2, decidido: 'Y otra.', fecha: '2026-09-11', estado: 'activa', norma: null },
   {
     numero: 3,
     decidido: 'Una que ya apunta al canon.',
     fecha: '2026-09-12',
+    estado: 'activa',
     norma: { documento: 'docs/SP3-canon.md', apartado: '§7.5' },
+  },
+  {
+    numero: 4,
+    decidido: 'Una que ya estaba retirada.',
+    fecha: '2026-09-13',
+    estado: 'inactiva',
+    norma: null,
   },
 ]
 
@@ -400,6 +408,101 @@ console.log('\nLo que ya estaba escrito')
       sinDecirNorma.plan.normasPuestas === 0 &&
       sinDecirNorma.plan.yaEstaban[0].norma === false,
   )
+}
+
+console.log('\nRetirar decisiones que ya estan escritas')
+{
+  // El caso de la poda: un fichero de solo decisiones ya escritas, cada una
+  // con su "inactiva". Antes el plan decia "se escribiran 0" y no habia nada
+  // que hacer; ahora dice a cuantas se les va a retirar.
+  const poda = leer([
+    {
+      decidido: 'Una que ya estaba escrita.',
+      fecha: '2026-09-10',
+      motivo: 'x',
+      tema: 'y',
+      inactiva: { motivo: 'Lo dice mejor la 2.', sustituida_por: 2 },
+    },
+    {
+      decidido: 'Y otra.',
+      fecha: '2026-09-11',
+      motivo: 'x',
+      tema: 'y',
+      inactiva: { motivo: 'Tambien.', sustituida_por: 3 },
+    },
+  ])
+  comprobar('un fichero de solo decisiones ya escritas se lee', poda.ok,
+    poda.ok ? '' : poda.errores.join(' | '))
+  comprobar('no escribe ninguna nueva', poda.ok && poda.plan.nuevas === 0)
+  comprobar('y dice que a dos se les retirara', poda.ok && poda.plan.retiradas === 2)
+  comprobar('con sus numeros, para poder mirarlos antes',
+    poda.ok &&
+      poda.plan.yaEstaban.filter((f) => f.retirar).map((f) => f.numero).join(',') === '1,2')
+  comprobar(
+    '"inactivaciones" ya no las cuenta: esas son las nuevas que nacen inactivas',
+    poda.ok && poda.plan.inactivaciones === 0,
+  )
+
+  const naceInactiva = leer([
+    { ...UNA_BUENA, ref: 'nueva' },
+    {
+      decidido: 'Una nueva que nace retirada.',
+      fecha: '2026-09-21',
+      motivo: 'x',
+      tema: 'y',
+      inactiva: { motivo: 'z', sustituida_por: 'nueva' },
+    },
+  ])
+  comprobar('una nueva que nace inactiva si cuenta ahi',
+    naceInactiva.ok && naceInactiva.plan.inactivaciones === 1 && naceInactiva.plan.retiradas === 0)
+
+  const yaRetirada = leer([
+    {
+      decidido: 'Una que ya estaba retirada.',
+      fecha: '2026-09-13',
+      motivo: 'x',
+      tema: 'y',
+      inactiva: { motivo: 'Otro motivo distinto.', sustituida_por: 2 },
+    },
+  ])
+  comprobar('una que ya estaba retirada no se cuenta para retirar',
+    yaRetirada.ok && yaRetirada.plan.retiradas === 0 && yaRetirada.plan.yaInactivas === 1,
+    yaRetirada.ok ? '' : yaRetirada.errores.join(' | '))
+
+  const sinInactiva = leer([
+    { decidido: 'Una que ya estaba retirada.', fecha: '2026-09-13', motivo: 'x', tema: 'y' },
+  ])
+  comprobar('y una entrada sin "inactiva" no la marca para nada',
+    sinInactiva.ok &&
+      sinInactiva.plan.retiradas === 0 &&
+      sinInactiva.plan.yaInactivas === 0 &&
+      sinInactiva.plan.yaEstaban[0].retirar === false)
+
+  const aSiMismaPorNumero = leer([
+    {
+      decidido: 'Una que ya estaba escrita.',
+      fecha: '2026-09-10',
+      motivo: 'x',
+      tema: 'y',
+      inactiva: { motivo: 'z', sustituida_por: 1 },
+    },
+  ])
+  comprobar(
+    'una entrada que se pone a si misma de sustituta se dice antes de escribir',
+    !aSiMismaPorNumero.ok && aSiMismaPorNumero.errores[0].includes('si misma'),
+    aSiMismaPorNumero.ok ? '' : aSiMismaPorNumero.errores[0],
+  )
+
+  const aOtraQueExiste = leer([
+    {
+      decidido: 'Una que ya estaba escrita.',
+      fecha: '2026-09-10',
+      motivo: 'x',
+      tema: 'y',
+      inactiva: { motivo: 'z', sustituida_por: 2 },
+    },
+  ])
+  comprobar('apuntar a otra que existe sigue valiendo', aOtraQueExiste.ok)
 }
 
 console.log(`\n${fallos === 0 ? 'TODO CORRECTO' : `${fallos} FALLOS`}`)

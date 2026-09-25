@@ -59,6 +59,8 @@ export type DecisionExistente = {
   numero: number
   decidido: string
   fecha: string
+  /** Si ya esta retirada. Una que lo esta no se vuelve a retirar. */
+  estado: 'activa' | 'inactiva'
   /** La que tiene escrita ahora mismo, para saber si el fichero la cambia. */
   norma: NormaDeFichero | null
 }
@@ -69,17 +71,28 @@ export type PlanDeImportacion = {
   /** Cuantas se escribiran. */
   nuevas: number
   /**
-   * Las que ya estaban escritas, con el numero que tienen. "norma" dice si a
-   * esa, ademas de dejarla como esta, se le va a poner la norma del fichero.
+   * Las que ya estaban escritas, con el numero que tienen, y que se les va a
+   * hacer: ponerles la norma del fichero, retirarlas, o nada.
    */
-  yaEstaban: Array<{ posicion: number; numero: number; decidido: string; norma: boolean }>
-  /** Cuantas quedaran inactivas al terminar. */
-  inactivaciones: number
+  yaEstaban: Array<{
+    posicion: number
+    numero: number
+    decidido: string
+    norma: boolean
+    retirar: boolean
+    yaInactiva: boolean
+  }>
   /**
-   * A cuantas de las que ya estaban escritas se les pondra la norma. Es lo
-   * unico que la importacion cambia de una decision que ya existe, aparte de
-   * inactivarla, y por eso se cuenta aparte y se avisa antes de escribir.
+   * Cuantas de las que se escriben nacen ya inactivas. Solo las nuevas: las
+   * que ya estaban escritas y se retiran se cuentan en "retiradas", porque
+   * decir "se escribiran 0, 9 de ellas inactivas" no lo entiende nadie.
    */
+  inactivaciones: number
+  /** A cuantas de las que ya estaban escritas y siguen activas se les retirara. */
+  retiradas: number
+  /** Cuantas de las que ya estaban escritas ya estaban retiradas. No se tocan. */
+  yaInactivas: number
+  /** A cuantas de las que ya estaban escritas se les pondra la norma. */
   normasPuestas: number
 }
 
@@ -295,6 +308,17 @@ export function leerFicheroDeDecisiones(
     entradas.push({ ref, decidido, fecha, motivo, tema, detalle, nodo, norma, inactiva })
   })
 
+  // Con que decision ya escrita casa cada entrada, si casa con alguna: es la
+  // que dice lo mismo el mismo dia. Se calcula aqui arriba y no al final
+  // porque hace falta para dos cosas distintas —avisar de que una entrada se
+  // sustituye a si misma, y decir que va a pasar con las que ya estaban— y
+  // calcularlo dos veces seria pedir que las dos se desincronicen.
+  const claveExistente = new Map(
+    existentes.map((fila) => [`${fila.fecha}|${fila.decidido.trim()}`, fila]),
+  )
+  const casaCon = (entrada: EntradaDeFichero) =>
+    claveExistente.get(`${entrada.fecha}|${entrada.decidido}`) ?? null
+
   // Las sustituciones se comprueban con el fichero entero leido, porque una
   // entrada puede senalar a otra que viene despues.
   const numerosExistentes = new Set(existentes.map((fila) => fila.numero))
@@ -312,6 +336,14 @@ export function leerFicheroDeDecisiones(
         errores.push(
           `${donde}: dice que la sustituye la decision ${cual}, y en este proyecto no hay ninguna con ese numero.`,
         )
+        return
+      }
+      // La errata tipica de un fichero de poda escrito a mano: la entrada es
+      // una decision que ya existe, y se pone a si misma como sustituta. La
+      // tabla ya lo rechaza, pero tumbando el fichero entero con un mensaje de
+      // Postgres; dicho aqui se entiende y se arregla.
+      if (casaCon(entrada)?.numero === cual) {
+        errores.push(`${donde}: es la decision ${cual}, asi que se sustituye a si misma.`)
       }
       return
     }
@@ -339,12 +371,14 @@ export function leerFicheroDeDecisiones(
   // camino natural para marcar cien decisiones de golpe —exportar, anadir la
   // norma, reimportar— no haria nada, porque las cien se contarian como ya
   // escritas. Nunca al reves: una entrada sin norma no borra la que hubiera.
+  //
+  // Y la otra cosa que si cambia de una que ya estaba: retirarla. Una entrada
+  // con "inactiva" que casa con una decision ya escrita la retira, igual que
+  // si se hubiera abierto en la pantalla. Si esa decision ya estaba retirada,
+  // no se toca: retirar es un acto y no se hace dos veces.
   const yaEstaban: PlanDeImportacion['yaEstaban'] = []
-  const claveExistente = new Map(
-    existentes.map((fila) => [`${fila.fecha}|${fila.decidido.trim()}`, fila]),
-  )
   entradas.forEach((entrada, indice) => {
-    const fila = claveExistente.get(`${entrada.fecha}|${entrada.decidido}`)
+    const fila = casaCon(entrada)
     if (!fila) return
     const cambiaLaNorma =
       entrada.norma !== null &&
@@ -355,6 +389,8 @@ export function leerFicheroDeDecisiones(
       numero: fila.numero,
       decidido: entrada.decidido,
       norma: cambiaLaNorma,
+      retirar: entrada.inactiva !== null && fila.estado === 'activa',
+      yaInactiva: entrada.inactiva !== null && fila.estado === 'inactiva',
     })
   })
 
@@ -364,7 +400,10 @@ export function leerFicheroDeDecisiones(
       entradas,
       nuevas: entradas.length - yaEstaban.length,
       yaEstaban,
-      inactivaciones: entradas.filter((entrada) => entrada.inactiva).length,
+      // Solo las que nacen inactivas. Las que ya estaban van en "retiradas".
+      inactivaciones: entradas.filter((entrada) => entrada.inactiva && !casaCon(entrada)).length,
+      retiradas: yaEstaban.filter((fila) => fila.retirar).length,
+      yaInactivas: yaEstaban.filter((fila) => fila.yaInactiva).length,
       normasPuestas: yaEstaban.filter((fila) => fila.norma).length,
     },
   }
