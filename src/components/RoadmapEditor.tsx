@@ -8,7 +8,8 @@ import type {
 } from '../types/roadmap'
 import { Decisor } from './Decisor'
 import { Icon } from './Icon'
-import { contarDecisionesDelNodo, repuntarDecisionesDelNodo } from '../lib/decisiones-del-nodo'
+import type { DecisionesDelNodo } from '../lib/decisiones-del-nodo'
+import { contarDecisionesDelNodo, encolarRepunte } from '../lib/decisiones-del-nodo'
 import {
   applyAutomaticStatuses,
   normalizeRoadmapDocument,
@@ -21,6 +22,8 @@ import {
 type SyncStatus = 'local' | 'syncing' | 'synced' | 'error'
 
 type RoadmapEditorProps = {
+  /** Lo que haya pasado con las decisiones de un renombrado. Vacio si no hay nada que decir. */
+  avisoDecisiones: string
   availableProjects: RoadmapProject[]
   document: RoadmapDocument
   /** El uuid de la fila del proyecto. Lo necesita el decisor, que escribe en su propia tabla. */
@@ -29,6 +32,7 @@ type RoadmapEditorProps = {
   syncStatus: SyncStatus
   onBack: () => void
   onChange: (document: RoadmapDocument) => void
+  onReintentarDecisiones: () => void
   onSignOut: () => void
 }
 
@@ -395,9 +399,11 @@ export function RoadmapEditor({
   projectId,
   onBack,
   onChange,
+  onReintentarDecisiones,
   onSignOut,
   syncError,
   syncStatus,
+  avisoDecisiones,
 }: RoadmapEditorProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
@@ -430,7 +436,7 @@ export function RoadmapEditor({
   const [renombrado, setRenombrado] = useState<{
     idViejo: string
     idNuevo: string
-    decisiones: number
+    decisiones: DecisionesDelNodo
   } | null>(null)
 
   /**
@@ -500,6 +506,16 @@ export function RoadmapEditor({
     setIdDraft(selectedNode?.id ?? '')
   }, [selectedNode?.id])
 
+  /**
+   * El repunte se hace cuando el roadmap ya esta en el servidor, no antes.
+   *
+   * 'synced' quiere decir que lo que hay en pantalla es lo que hay arriba. Si
+   * en vez de eso se llega a 'error' —el guardado se ha rendido, o la guarda de
+   * updated_at ha visto un conflicto— el repunte se abandona y las decisiones
+   * se quedan en el id viejo, que en el servidor sigue existiendo porque el
+   * renombrado no llego a subir. Es el mismo resultado que contestar "dejalas
+   * como estan", y se puede rehacer renombrando otra vez.
+   */
   /**
    * Al crear una fase, el campo ID se enfoca con su contenido seleccionado.
    *
@@ -738,7 +754,7 @@ export function RoadmapEditor({
     // Si hay decisiones que citan la fase por su id viejo, se pregunta antes de
     // tocar nada: el renombrado y el repunte se deciden juntos.
     const decisiones = await contarDecisionesDelNodo(projectId, previousId)
-    if (decisiones > 0) {
+    if (decisiones.total > 0) {
       setRenombrado({ idViejo: previousId, idNuevo: nextId, decisiones })
       return
     }
@@ -752,16 +768,20 @@ export function RoadmapEditor({
     setSelectedId(nextId)
   }
 
-  /** Renombra y, si Ruben lo pide, lleva las decisiones a la fase nueva. */
-  async function resolverRenombrado(repuntar: boolean) {
+  /**
+   * Renombra y, si Ruben lo pide, deja el repunte apuntado para cuando el
+   * roadmap haya llegado al servidor. Aqui no se escribe ninguna decision.
+   */
+  function resolverRenombrado(repuntar: boolean) {
     if (!renombrado) return
     const { idViejo, idNuevo } = renombrado
     setRenombrado(null)
     aplicarRenombrado(idViejo, idNuevo)
-
-    if (!repuntar) return
-    const error = await repuntarDecisionesDelNodo(projectId, idViejo, idNuevo)
-    if (error) setErrorMessage(`La fase se renombro, pero las decisiones no: ${error}`)
+    // Se apunta en localStorage, no en memoria: el guardado del arbol puede
+    // terminar despues de cerrar el proyecto, o incluso en la sesion siguiente,
+    // y el repunte tiene que seguir ahi cuando llegue. Lo ejecuta ProjectList,
+    // que es quien sabe cuando el arbol ha llegado al servidor.
+    if (repuntar) encolarRepunte(projectId, { idViejo, idNuevo })
   }
 
   function cancelarRenombrado() {
@@ -1192,6 +1212,19 @@ export function RoadmapEditor({
 
       {errorMessage && enElArbol ? <p className="form-error no-print">{errorMessage}</p> : null}
 
+      {/* El arbol se guardo pero sus decisiones no se movieron. En ambar y no en
+          rojo porque no se ha perdido nada —la cola se reintenta sola— pero no
+          puede quedarse callado: hasta que se repunten, esas decisiones citan
+          una fase que ya no existe. */}
+      {avisoDecisiones ? (
+        <p className="aviso-decisiones no-print" role="status">
+          <span>{avisoDecisiones}</span>
+          <button className="secondary-button" onClick={onReintentarDecisiones} type="button">
+            Reintentar ahora
+          </button>
+        </p>
+      ) : null}
+
       {editorMode === 'canvas' ? (
         <section className="branch-canvas-panel full-screen no-print" aria-label="Editor visual de ramas">
             <div className="canvas-toolbar">
@@ -1390,16 +1423,23 @@ export function RoadmapEditor({
           <section className="modal">
             <h2>Renombrar {renombrado.idViejo} a {renombrado.idNuevo}</h2>
             <p className="modal-hint">
-              {renombrado.decisiones === 1
-                ? 'Hay 1 decision que cita esta fase por su ID.'
-                : `Hay ${renombrado.decisiones} decisiones que citan esta fase por su ID.`}{' '}
-              El decisor guarda la fase como texto, asi que si no se cambian ahora
-              se quedaran apuntando a <code>{renombrado.idViejo}</code>, que ya no
-              existira.
+              {renombrado.decisiones.total === 1
+                ? 'Hay 1 decision que cita esta fase por su ID'
+                : `Hay ${renombrado.decisiones.total} decisiones que citan esta fase por su ID`}
+              {renombrado.decisiones.inactivas > 0
+                ? ` (${renombrado.decisiones.activas} ${renombrado.decisiones.activas === 1 ? 'activa' : 'activas'} y ${renombrado.decisiones.inactivas} ${renombrado.decisiones.inactivas === 1 ? 'inactiva' : 'inactivas'}; las inactivas se llevan tambien, porque una decision retirada sigue explicando por que se hizo lo que se hizo)`
+                : ''}
+              . El decisor guarda la fase como texto, asi que si no se cambian
+              ahora se quedaran apuntando a <code>{renombrado.idViejo}</code>, que
+              ya no existira.
+            </p>
+            <p className="modal-hint">
+              Primero se guarda el arbol y despues se mueven las decisiones. Si el
+              guardado falla, no se toca ninguna.
             </p>
             <div className="modal-actions">
               <button onClick={() => resolverRenombrado(true)} type="button">
-                <Icon name="check" /> Renombrar y llevarme {renombrado.decisiones === 1 ? 'la decision' : `las ${renombrado.decisiones}`}
+                <Icon name="check" /> Renombrar y llevarme {renombrado.decisiones.total === 1 ? 'la decision' : `las ${renombrado.decisiones.total}`}
               </button>
               <button className="secondary-button" onClick={() => resolverRenombrado(false)} type="button">
                 Renombrar y dejarlas como estan

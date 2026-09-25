@@ -8,6 +8,13 @@ import {
   stringifyRoadmapJson,
 } from '../lib/roadmap-document'
 import { mismoDocumento, resolverGuardado } from '../lib/guardado'
+import {
+  guardarRepuntes,
+  leerRepuntes,
+  olvidarRepuntes,
+  repuntarDecisionesDelNodo,
+} from '../lib/decisiones-del-nodo'
+import { esMomentoDeRepuntar, queHacerSegunElDocumento } from '../lib/orden-del-repunte'
 import { supabase } from '../lib/supabase'
 import type { RoadmapDocument, RoadmapProject } from '../types/roadmap'
 
@@ -160,6 +167,8 @@ export function ProjectList({ session }: ProjectListProps) {
     'local' | 'syncing' | 'synced' | 'error'
   >('synced')
   const [syncError, setSyncError] = useState('')
+  /** Lo que haya que decir en pantalla sobre las decisiones que no se movieron. */
+  const [avisoDecisiones, setAvisoDecisiones] = useState('')
   const [conflicto, setConflicto] = useState<Conflicto | null>(null)
   /**
    * El documento de cada proyecto tal y como esta ahora, fuera del estado de
@@ -327,7 +336,66 @@ export function ProjectList({ session }: ProjectListProps) {
     documentosVivos.current[project.id] = document
     setActiveProjectId(project.id)
     setSyncError('')
+    setAvisoDecisiones('')
     setSyncStatus(estado)
+
+    // Si se abre ya al dia, lo que este en la cola es de un renombrado cuyo
+    // guardado si llego —puede que despues de cerrar la pestana—, asi que se
+    // repunta ahora.
+    if (esMomentoDeRepuntar(estado)) drenarRepuntes(project.id, document)
+  }
+
+  /**
+   * Mueve las decisiones de los renombrados que ya han llegado al servidor.
+   *
+   * Se llama en los dos momentos en los que el documento esta asentado y es lo
+   * que hay arriba: justo despues de un guardado con exito, y al abrir un
+   * proyecto que ya viene al dia. Con eso, un renombrado hecho ayer y cuyo
+   * guardado termino despues de cerrar la pestana se repunta al abrir hoy.
+   *
+   * Lo que falla se queda en la cola y se reintenta en la vuelta siguiente; el
+   * aviso en pantalla es la otra mitad, porque una cola que se reintenta sola
+   * sin decir nada es otra vez el fallo en silencio.
+   */
+  async function drenarRepuntes(projectId: string, documento: RoadmapDocument) {
+    const pendientes = leerRepuntes(projectId)
+    if (pendientes.length === 0) return
+
+    const ids: string[] = []
+    const recorrer = (nodes: RoadmapDocument['nodes']) => {
+      nodes.forEach((node) => {
+        ids.push(node.id)
+        recorrer(node.children)
+      })
+    }
+    recorrer(documento.nodes)
+
+    const quedan: typeof pendientes = []
+    let ultimoFallo = ''
+
+    for (const repunte of pendientes) {
+      if (queHacerSegunElDocumento(repunte, ids) === 'descartar') continue
+      const error = await repuntarDecisionesDelNodo(projectId, repunte.idViejo, repunte.idNuevo)
+      if (error) {
+        quedan.push(repunte)
+        ultimoFallo = error
+      }
+    }
+
+    guardarRepuntes(projectId, quedan)
+
+    if (quedan.length === 0) {
+      setAvisoDecisiones('')
+      return
+    }
+
+    const cual =
+      quedan.length === 1
+        ? `las decisiones de ${quedan[0].idViejo} siguen sin moverse a ${quedan[0].idNuevo}`
+        : `${quedan.length} renombrados tienen sus decisiones sin mover`
+    setAvisoDecisiones(
+      `El arbol esta guardado, pero ${cual} (${ultimoFallo}). Se reintenta al guardar otra vez o al volver a abrir el proyecto.`,
+    )
   }
 
   /**
@@ -383,6 +451,11 @@ export function ProjectList({ session }: ProjectListProps) {
     if (!conflicto) return
     const { project } = conflicto
     localStorage.removeItem(localStorageKey(project.id))
+    // El renombrado que habia en la copia local se va con ella, asi que su
+    // repunte sobra: mover las decisiones ahora las dejaria apuntando a un id
+    // que nadie ha creado.
+    olvidarRepuntes(project.id)
+    setAvisoDecisiones('')
     setConflicto(null)
     abrirCon(project, normalizeDocument(project.document, project), 'synced')
   }
@@ -535,6 +608,14 @@ export function ProjectList({ session }: ProjectListProps) {
         // justo lo que hace falta para que la escritura siguiente pase la guarda.
         escribirCache(updatedProject.id, resuelto.document, resuelto.updated_at)
         documentosVivos.current[updatedProject.id] = resuelto.document
+
+        // El arbol ya esta arriba. Este es el momento —y el unico— en el que
+        // mover las decisiones no puede dejarlas apuntando a un id que en el
+        // servidor no existe. Si quedo algo tecleado durante el vuelo, el
+        // estado sera 'local' y se repuntara en el guardado siguiente.
+        if (esMomentoDeRepuntar(resuelto.estado)) {
+          drenarRepuntes(updatedProject.id, resuelto.document)
+        }
         setProjects((currentProjects) =>
           currentProjects.map((project) =>
             project.id === updatedProject.id
@@ -617,6 +698,7 @@ export function ProjectList({ session }: ProjectListProps) {
     }
 
     localStorage.removeItem(localStorageKey(projectId))
+    olvidarRepuntes(projectId)
     delete documentosVivos.current[projectId]
     setProjects((currentProjects) =>
       currentProjects.filter((project) => project.id !== projectId),
@@ -677,6 +759,14 @@ export function ProjectList({ session }: ProjectListProps) {
           onBack={() => setActiveProjectId(null)}
           onChange={handleDocumentChange}
           onSignOut={() => supabaseClient.auth.signOut()}
+          avisoDecisiones={avisoDecisiones}
+          onReintentarDecisiones={() =>
+            drenarRepuntes(
+              activeProject.id,
+              documentosVivos.current[activeProject.id] ??
+                normalizeDocument(activeProject.document, activeProject),
+            )
+          }
           syncError={syncError}
           syncStatus={syncStatus}
         />

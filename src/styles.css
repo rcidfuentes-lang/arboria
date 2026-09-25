@@ -1837,6 +1837,25 @@ h2 {
   border-color: var(--aviso);
 }
 
+.aviso-decisiones {
+  align-items: center;
+  background: var(--aviso-soft);
+  border: 1px solid var(--aviso);
+  border-radius: 8px;
+  color: var(--aviso);
+  display: flex;
+  flex-wrap: wrap;
+  font-weight: 600;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin: 0 0.75rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.aviso-decisiones button {
+  flex: 0 0 auto;
+}
+
 .aviso-en-duda {
   color: var(--aviso);
   display: block;
