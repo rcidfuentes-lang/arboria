@@ -494,6 +494,23 @@ export function Decisor({ projectId, proyecto, fasesDelRoadmap }: DecisorProps) 
     [decisiones],
   )
 
+  /**
+   * Saltar a otra decision sin pasar por el buscador.
+   *
+   * Quita los filtros y la busqueda antes de seleccionarla: si no, se podria
+   * saltar a una decision que el filtro de turno deja fuera de la lista y la
+   * pantalla se quedaria ensenando una decision que no esta en la columna de
+   * al lado.
+   */
+  function irALaDecision(id: string | null) {
+    if (!id) return
+    setBusqueda('')
+    setFiltro('todas')
+    setFiltroNorma('todas')
+    setEscribiendoNueva(false)
+    setSeleccionada(id)
+  }
+
   const candidatasASustituir = useMemo(
     () => decisiones.filter((fila) => fila.estado === 'activa' && fila.id !== actual?.id),
     [actual, decisiones],
@@ -979,7 +996,25 @@ export function Decisor({ projectId, proyecto, fasesDelRoadmap }: DecisorProps) 
                 <p>
                   <strong>Inactiva.</strong>{' '}
                   {actual.sustituida_por ? (
-                    <>La sustituye la decision {numeroDe.get(actual.sustituida_por) ?? '?'}.</>
+                    <>
+                      La sustituye la{' '}
+                      {/* Pulsable: seguir una cadena —la 127 la sustituye la 124,
+                          y a esa la 49— costaba volver al buscador y teclear el
+                          numero en cada salto, reteniendolo de cabeza. */}
+                      {numeroDe.has(actual.sustituida_por) ? (
+                        <button
+                          className="enlace-a-decision"
+                          onClick={() => irALaDecision(actual.sustituida_por)}
+                          title={`Ir a la decision ${numeroDe.get(actual.sustituida_por)}`}
+                          type="button"
+                        >
+                          decision {numeroDe.get(actual.sustituida_por)}
+                        </button>
+                      ) : (
+                        <>decision que ya no esta</>
+                      )}
+                      .
+                    </>
                   ) : (
                     <>
                       La recoge{' '}

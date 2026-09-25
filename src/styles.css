@@ -1794,6 +1794,25 @@ h2 {
   margin: 0;
 }
 
+/* Un boton que se lee como un enlace: va dentro de una frase, asi que no puede
+   parecer un boton ni romper la linea. */
+.enlace-a-decision {
+  background: transparent;
+  border-radius: 4px;
+  color: var(--brand-strong);
+  display: inline;
+  font: inherit;
+  font-weight: 800;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.enlace-a-decision:hover {
+  background: transparent;
+  color: var(--text);
+}
+
 .decisor-campo {
   display: grid;
   font-size: 0.8rem;
