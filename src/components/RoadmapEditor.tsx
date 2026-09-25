@@ -939,7 +939,20 @@ export function RoadmapEditor({
           <button aria-label="Copiar fase" className="copy-button" onClick={() => copyText(nodeMarkdown(node))} title="Copiar fase" type="button">
             <Icon name="copy" />
           </button>
-          <button aria-label="Mas acciones" className="menu-button" onClick={() => setOpenMenuId(openMenuId === node.id ? null : node.id)} title="Mas acciones" type="button">
+          {/* Abrir el menu selecciona la fila. Antes no, y habia dos nociones de
+              "fase actual" a la vez: se podia estar editando SP4.1 en el panel
+              de la derecha y borrar SP4.3 desde su menu tres filas mas abajo,
+              con el panel ensenando todavia SP4.1. */}
+          <button
+            aria-label="Mas acciones"
+            className="menu-button"
+            onClick={() => {
+              if (openMenuId !== node.id) selectNode(node)
+              setOpenMenuId(openMenuId === node.id ? null : node.id)
+            }}
+            title="Mas acciones"
+            type="button"
+          >
             <Icon name="more" />
           </button>
         </div>
