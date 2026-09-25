@@ -101,11 +101,46 @@ function createUniqueNodeId(existingIds: Set<string>, base = 'fase') {
   return candidate
 }
 
-function createNode(existingIds: Set<string>): RoadmapNode {
-  const id = createUniqueNodeId(existingIds)
+/** El titulo con el que nace una fase. Se compara con el para saber si sigue sin tocar. */
+const tituloPorDefecto = 'Nueva fase'
+
+/**
+ * El id que se propone para una fase nueva: el siguiente de su rama.
+ *
+ * Los ids los escribe Ruben, y eso no cambia —esto es una propuesta, y llega
+ * seleccionada para que teclear encima la borre—. Pero proponer
+ * "fase-mugu6hn8-a1a30b68" era proponer nada: habia que vaciar veintidos
+ * caracteres antes de poder escribir. Colgando de SP4.1 con SP4.1.1 y SP4.1.2
+ * dentro, lo que casi siempre toca es SP4.1.3.
+ *
+ * Si la rama no sigue la convencion numerica, o es una fase raiz, no hay nada
+ * sensato que proponer y se vuelve al id generado, que al menos es unico.
+ */
+function proponerIdDeRama(parentId: string, hermanos: RoadmapNode[], existingIds: Set<string>) {
+  if (!parentId) return ''
+
+  const prefijo = `${parentId}.`
+  let ultimo = 0
+  for (const hermano of hermanos) {
+    if (!hermano.id.startsWith(prefijo)) continue
+    const cola = hermano.id.slice(prefijo.length)
+    if (!/^\d+$/.test(cola)) continue
+    ultimo = Math.max(ultimo, Number(cola))
+  }
+
+  let candidato = `${prefijo}${ultimo + 1}`
+  while (existingIds.has(candidato)) {
+    ultimo += 1
+    candidato = `${prefijo}${ultimo + 1}`
+  }
+  return candidato
+}
+
+function createNode(existingIds: Set<string>, idPropuesto = ''): RoadmapNode {
+  const id = idPropuesto || createUniqueNodeId(existingIds)
   return {
     id,
-    title: 'Nueva fase',
+    title: tituloPorDefecto,
     status: 'planned',
     content: '',
     children: [],
@@ -383,6 +418,8 @@ export function RoadmapEditor({
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const [idDraft, setIdDraft] = useState('')
   const idInputRef = useRef<HTMLInputElement>(null)
+  /** El ultimo focusIdNonce ya atendido, para no reseleccionar en cada tecla. */
+  const nonceAtendido = useRef(0)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
 
   /**
@@ -460,12 +497,25 @@ export function RoadmapEditor({
   }, [flatNodes, selectedNode])
 
   useEffect(() => {
-    if (focusIdNonce > 0) idInputRef.current?.focus()
-  }, [focusIdNonce])
-
-  useEffect(() => {
     setIdDraft(selectedNode?.id ?? '')
   }, [selectedNode?.id])
+
+  /**
+   * Al crear una fase, el campo ID se enfoca con su contenido seleccionado.
+   *
+   * select() y no focus(): el id llega propuesto —el siguiente de la rama— y
+   * con el cursor al final habia que vaciarlo a mano antes de escribir otro.
+   *
+   * Espera a que el borrador se haya puesto al dia con la fase nueva. Antes se
+   * seleccionaba en cuanto subia el contador, que es un render antes de que el
+   * campo tenga el valor nuevo, y la seleccion se perdia al llegar este.
+   */
+  useEffect(() => {
+    if (focusIdNonce === 0 || nonceAtendido.current === focusIdNonce) return
+    if (idDraft !== (selectedNode?.id ?? '')) return
+    nonceAtendido.current = focusIdNonce
+    idInputRef.current?.select()
+  }, [focusIdNonce, idDraft, selectedNode?.id])
 
   function emitNodes(nodes: RoadmapNode[]) {
     onChange({ ...document, nodes: applyAutomaticStatuses(nodes) })
@@ -487,7 +537,9 @@ export function RoadmapEditor({
   }
 
   function addNode(parentId: string, index?: number) {
-    const node = createNode(collectNodeIds(document.nodes))
+    const existentes = collectNodeIds(document.nodes)
+    const hermanos = parentId ? (findNode(document.nodes, parentId)?.children ?? []) : document.nodes
+    const node = createNode(existentes, proponerIdDeRama(parentId, hermanos, existentes))
     // El filtro se quita al crear. Una fase nueva no casa con lo que hubiera
     // tecleado, asi que con el filtro puesto nacia invisible: no se veia, no
     // parecia que hubiera pasado nada, y se pulsaba otra vez.
@@ -1285,7 +1337,19 @@ export function RoadmapEditor({
                     </span>
                   ) : null}
                 </label>
-                <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>
+                <label>
+                  Título
+                  {/* Mientras siga siendo el titulo con el que nacio, entrar en el
+                      campo lo selecciona: teclear lo reemplaza en vez de anadirse
+                      detras y dejar "Nueva faseRecorte de frontera". */}
+                  <input
+                    onChange={(event) => updateSelected('title', event.target.value)}
+                    onFocus={(event) => {
+                      if (event.target.value === tituloPorDefecto) event.target.select()
+                    }}
+                    value={selectedNode.title}
+                  />
+                </label>
                 <label>Estado<select onChange={(event) => updateSelected('status', event.target.value as RoadmapNodeStatus)} value={selectedNode.status}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               </div>
               <textarea
