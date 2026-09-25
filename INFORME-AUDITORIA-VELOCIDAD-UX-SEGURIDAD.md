@@ -9,10 +9,10 @@ o leído en el código, y cada cosa dice dónde vive.
 Dos avisos antes de empezar, porque son cosas que toqué yo:
 
 - Para medir el coste de teclear escribí **cinco caracteres** en el contenido
-  del nodo SP0.4 del roadmap de Songplay y los retiré acto seguido. El campo
-  volvió a sus 1.060 caracteres, con el mismo final, y la pantalla marcó
-  "Guardado". No queda rastro en el texto, pero sí dos escrituras en el
-  historial de `updated_at`.
+  del **nodo raíz SP**, el que se titula "Songplay", y los retiré acto seguido.
+  El campo volvió a sus 1.060 caracteres, con el mismo final, y la pantalla
+  marcó "Guardado". No queda rastro en el texto, pero sí dos escrituras en el
+  historial de `updated_at`. Ningún otro nodo se tocó en toda la auditoría.
 - Para comprobar si el registro dinámico de clientes es realmente público,
   **di de alta un cliente de prueba**. Está en `mcp_oauth_clients` con el
   nombre "Prueba de auditoria" y el `client_id`
@@ -102,6 +102,11 @@ me lo esperaba en una pantalla con 141 nodos y 176 decisiones. Filtrar el árbol
 cuesta entre 2 y 5 ms por tecla; buscar en el decisor, entre 1 y 14 ms. El
 `PerformanceObserver` no registró **ni una sola tarea larga** en toda la
 sesión. React aquí no es el problema.
+
+(Los 141 nodos son los que tenía el roadmap cuando se tomaron estas medidas.
+Mientras duraba la auditoría el documento creció a 142 —entró SP4.1.2, "El
+recorte, construido"—, así que los dos números aparecen según de qué momento
+hable cada medición. Nada de lo que se mide aquí cambia por un nodo.)
 
 La carga inicial también está bien, aunque los números hay que leerlos con
 cuidado. En la primera medición salieron TTFB 445 ms, `load` 533 ms y primer
@@ -317,9 +322,9 @@ Conviene decirlo antes de la lista de peros, porque es trabajo hecho y no se ve:
 Es el hallazgo de uso más rentable de todo el informe, porque es una línea de
 CSS.
 
-Medido en vivo sobre el nodo SP0.4: el `textarea` de contenido renderiza a
-**79 px** de alto, su contenido necesita **374**, y `resize` está en `none`, así
-que no se puede agrandar a mano. La rejilla que lo contiene **le tiene
+Medido en vivo sobre el nodo raíz SP, cuyo contenido son 1.060 caracteres: el
+`textarea` renderiza a **79 px** de alto, su contenido necesita **374**, y
+`resize` está en `none`, así que no se puede agrandar a mano. La rejilla que lo contiene **le tiene
 reservados 460 px** —la última fila de `.text-editor` mide 460,67 px— y se
 quedan vacíos.
 
