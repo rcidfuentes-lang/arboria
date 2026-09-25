@@ -468,6 +468,27 @@ export function Decisor({ projectId, proyecto, fasesDelRoadmap }: DecisorProps) 
     [decisiones],
   )
 
+  /**
+   * Lo que el rastro ensena de un valor viejo o nuevo.
+   *
+   * El disparador guarda lo que habia en la columna, y en sustituida_por lo que
+   * hay es el uuid de la fila. Pintarlo tal cual sacaba el uuid a la pantalla
+   * —"75c14bc4-9676-…"— cuando hacia afuera una decision es su numero y el uuid
+   * no sale nunca de la base. Aqui se traduce, igual que ya se traducia en la
+   * lista y en la cabecera.
+   */
+  const valorDelRastro = useCallback(
+    (campo: string, valor: string | null) => {
+      if (valor === null) return '(vacio)'
+      if (campo !== 'sustituida_por') return valor
+      const numero = numeroDe.get(valor)
+      // Si la sustituta ya no esta —borrada, o de otro proyecto— es mejor decir
+      // que no se sabe que ensenar el uuid.
+      return numero ? `la decision ${numero}` : 'una decision que ya no esta'
+    },
+    [numeroDe],
+  )
+
   const temas = useMemo(
     () => [...new Set([...decisiones.map((fila) => fila.tema), ...temasSugeridos])],
     [decisiones],
@@ -1048,8 +1069,8 @@ export function Decisor({ projectId, proyecto, fasesDelRoadmap }: DecisorProps) 
                         {nombreDelCampo[fila.campo] ?? fila.campo} ·{' '}
                         {formatearMomento(fila.cambiado_el)}
                       </p>
-                      <p className="decisor-antes">{fila.antes ?? '(vacio)'}</p>
-                      <p className="decisor-despues">{fila.despues ?? '(vacio)'}</p>
+                      <p className="decisor-antes">{valorDelRastro(fila.campo, fila.antes)}</p>
+                      <p className="decisor-despues">{valorDelRastro(fila.campo, fila.despues)}</p>
                     </li>
                   ))}
                 </ul>
