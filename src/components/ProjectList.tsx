@@ -154,11 +154,18 @@ export function ProjectList({ session }: ProjectListProps) {
   const [syncError, setSyncError] = useState('')
   const [conflicto, setConflicto] = useState<Conflicto | null>(null)
   /**
-   * Lo que hay en pantalla ahora mismo, fuera del estado de React. El
-   * autoguardado lo necesita al volver, y para entonces la variable que
-   * capturo cuando salio ya no dice la verdad.
+   * El documento de cada proyecto tal y como esta ahora, fuera del estado de
+   * React. El autoguardado lo necesita al volver, y para entonces la variable
+   * que capturo cuando salio ya no dice la verdad.
+   *
+   * Va por proyecto y no en una sola ranura porque si no, teclear en A y
+   * cambiar a B perdia lo tecleado en A: al volver el guardado de A, la unica
+   * ranura ya hablaba de B, se daba por bueno el eco del servidor, y eso se
+   * escribia encima de la cache de A.
    */
-  const documentoVivo = useRef<{ id: string; document: RoadmapDocument } | null>(null)
+  const documentosVivos = useRef<Record<string, RoadmapDocument>>({})
+  /** Cual se esta mirando al volver una escritura, que puede no ser el suyo. */
+  const proyectoEnPantalla = useRef<string | null>(null)
   /** Nunca dos escrituras del mismo proyecto a la vez: se pisarian el sello. */
   const guardando = useRef(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -193,6 +200,10 @@ export function ProjectList({ session }: ProjectListProps) {
   useEffect(() => {
     loadProjects()
   }, [])
+
+  useEffect(() => {
+    proyectoEnPantalla.current = activeProjectId
+  }, [activeProjectId])
 
   async function handleCreateProject() {
     setErrorMessage('')
@@ -296,7 +307,7 @@ export function ProjectList({ session }: ProjectListProps) {
         currentProject.id === project.id ? { ...project, document } : currentProject,
       ),
     )
-    documentoVivo.current = { id: project.id, document }
+    documentosVivos.current[project.id] = document
     setActiveProjectId(project.id)
     setSyncError('')
     setSyncStatus(estado)
@@ -389,7 +400,7 @@ export function ProjectList({ session }: ProjectListProps) {
     // editando, que es lo que luego permite distinguir trabajo sin guardar
     // de una copia vieja.
     escribirCache(activeProject.id, nextDocument, activeProject.updated_at)
-    documentoVivo.current = { id: activeProject.id, document: nextDocument }
+    documentosVivos.current[activeProject.id] = nextDocument
     setSyncStatus('local')
     setSyncError('')
     setProjects((currentProjects) =>
@@ -418,96 +429,121 @@ export function ProjectList({ session }: ProjectListProps) {
       if (guardando.current) return
       guardando.current = true
 
-      setSyncStatus('syncing')
-      const updatedAt = new Date().toISOString()
-      // La version sobre la que se ha estado editando. La guarda va en el
-      // propio update: si la fila ya no esta asi, no se escribe. Antes esto
-      // iba solo con el id, de modo que ganaba el ultimo que llegara y el otro
-      // no se enteraba de que acababa de perder su trabajo.
-      const versionDePartida = activeProject.updated_at
-      // Lo que viaja en esta peticion. Al volver hay que comparar con lo que
-      // haya en pantalla entonces, no con esto.
-      const documentoEnviado = activeProject.document
+      try {
+        setSyncStatus('syncing')
+        const updatedAt = new Date().toISOString()
+        // La version sobre la que se ha estado editando. La guarda va en el
+        // propio update: si la fila ya no esta asi, no se escribe. Antes esto
+        // iba solo con el id, de modo que ganaba el ultimo que llegara y el otro
+        // no se enteraba de que acababa de perder su trabajo.
+        const versionDePartida = activeProject.updated_at
+        // Lo que viaja en esta peticion. Al volver hay que comparar con lo que
+        // haya en pantalla entonces, no con esto.
+        const documentoEnviado = activeProject.document
 
-      const { data, error } = await supabaseClient
-        .from('roadmap_projects')
-        .update({
-          document: activeProject.document,
-          name: activeProject.document.project.name,
-          updated_at: updatedAt,
-        })
-        .eq('id', activeProject.id)
-        .eq('updated_at', versionDePartida)
-        .select('*')
-        .maybeSingle()
-
-      // Lo que hay en pantalla al volver. Si se ha tecleado durante el vuelo,
-      // esto ya no es lo que se mando.
-      const vivo = documentoVivo.current
-      const enPantalla =
-        vivo && vivo.id === activeProject.id ? vivo.document : documentoEnviado
-
-      guardando.current = false
-
-      if (error) {
-        setSyncError(error.message)
-        setSyncStatus('error')
-        return
-      }
-
-      // Sin error y sin fila: la guarda ha hecho su trabajo. Se trae lo que hay
-      // ahora en el servidor y se pregunta, en vez de reintentar por encima.
-      if (!data) {
-        const { data: actual, error: errorAlReleer } = await supabaseClient
+        const { data, error } = await supabaseClient
           .from('roadmap_projects')
-          .select('*')
+          .update({
+            document: activeProject.document,
+            name: activeProject.document.project.name,
+            updated_at: updatedAt,
+          })
           .eq('id', activeProject.id)
+          .eq('updated_at', versionDePartida)
+          .select('*')
           .maybeSingle()
 
-        if (errorAlReleer || !actual) {
-          setSyncError(
-            'Este proyecto ha cambiado en otro sitio y no se ha podido leer como esta ahora.',
-          )
-          setSyncStatus('error')
+        // Lo que hay en pantalla al volver. Si se ha tecleado durante el vuelo,
+        // esto ya no es lo que se mando. Se busca por el id del proyecto que se
+        // estaba guardando, que puede no ser el que se este mirando ahora.
+        const enPantalla = documentosVivos.current[activeProject.id] ?? documentoEnviado
+
+        // Se puede haber cambiado de proyecto mientras esto viajaba. Lo que va
+        // atado a la fila —la cache, el documento— se aplica igual, porque va
+        // por id; lo que es de la pantalla —el indicador, el aviso— no se toca,
+        // que hablaria del proyecto equivocado.
+        const sigueEnPantalla = proyectoEnPantalla.current === activeProject.id
+
+        if (error) {
+          if (sigueEnPantalla) {
+            setSyncError(error.message)
+            setSyncStatus('error')
+          }
           return
         }
 
-        setSyncStatus('error')
-        setSyncError('Este proyecto ha cambiado en otro sitio mientras lo editabas.')
-        setConflicto({
-          project: actual as RoadmapProject,
-          // Lo que se enfrenta a la del servidor es lo que hay en pantalla,
-          // con lo tecleado durante el vuelo incluido.
-          documentoLocal: enPantalla,
-          motivo: 'al-guardar',
-        })
-        return
+        // Sin error y sin fila: la guarda ha hecho su trabajo. Se trae lo que hay
+        // ahora en el servidor y se pregunta, en vez de reintentar por encima.
+        if (!data) {
+          const { data: actual, error: errorAlReleer } = await supabaseClient
+            .from('roadmap_projects')
+            .select('*')
+            .eq('id', activeProject.id)
+            .maybeSingle()
+
+          if (errorAlReleer || !actual) {
+            if (sigueEnPantalla) {
+              setSyncError(
+                'Este proyecto ha cambiado en otro sitio y no se ha podido leer como esta ahora.',
+              )
+              setSyncStatus('error')
+            }
+            return
+          }
+
+          // Si ya no se esta mirando este proyecto, el aviso no se levanta aqui:
+          // saldria encima de otro y se lo llevaria de la pantalla. No se pierde,
+          // porque la cache se queda con su sello viejo y el servidor ha
+          // cambiado, que es justo lo que hace saltar el aviso al volver a abrir.
+          if (!sigueEnPantalla) return
+
+          setSyncStatus('error')
+          setSyncError('Este proyecto ha cambiado en otro sitio mientras lo editabas.')
+          setConflicto({
+            project: actual as RoadmapProject,
+            // Lo que se enfrenta a la del servidor es lo que hay en pantalla,
+            // con lo tecleado durante el vuelo incluido.
+            documentoLocal: enPantalla,
+            motivo: 'al-guardar',
+          })
+          return
+        }
+
+        const updatedProject = data as RoadmapProject
+        const resuelto = resolverGuardado(documentoEnviado, enPantalla, updatedProject)
+
+        // El sello es siempre el del servidor, y el texto el que corresponda: la
+        // cache queda con la version de arriba y con lo que hay escrito, que es
+        // justo lo que hace falta para que la escritura siguiente pase la guarda.
+        escribirCache(updatedProject.id, resuelto.document, resuelto.updated_at)
+        documentosVivos.current[updatedProject.id] = resuelto.document
+        setProjects((currentProjects) =>
+          currentProjects.map((project) =>
+            project.id === updatedProject.id
+              ? {
+                  ...updatedProject,
+                  document: resuelto.document,
+                  name: resuelto.document.project.name,
+                }
+              : project,
+          ),
+        )
+        // Si se tecleo durante el vuelo, esto queda en 'local' y no en
+        // 'synced': el indicador no puede decir "Guardado" con cosas sin subir.
+        // Ademas la fila del estado es nueva, asi que este efecto vuelve a
+        // correr y programa la espera siguiente, ya con el sello nuevo.
+        //
+        // Si se ha cambiado de proyecto, el indicador habla del nuevo y no se
+        // toca. Lo que quede pendiente de este ya esta en su cache con el sello
+        // bueno, asi que sube solo la proxima vez que se abra.
+        if (sigueEnPantalla) setSyncStatus(resuelto.estado)
+      } finally {
+        // El candado se suelta pase lo que pase: por exito, por error de red,
+        // por conflicto, y tambien si algo de aqui dentro revienta. Si se
+        // quedara echado, el autoguardado no volveria a salir en toda la
+        // sesion y la pantalla no lo diria.
+        guardando.current = false
       }
-
-      const updatedProject = data as RoadmapProject
-      const resuelto = resolverGuardado(documentoEnviado, enPantalla, updatedProject)
-
-      // El sello es siempre el del servidor, y el texto el que corresponda: la
-      // cache queda con la version de arriba y con lo que hay escrito, que es
-      // justo lo que hace falta para que la escritura siguiente pase la guarda.
-      escribirCache(updatedProject.id, resuelto.document, resuelto.updated_at)
-      documentoVivo.current = { id: updatedProject.id, document: resuelto.document }
-      setProjects((currentProjects) =>
-        currentProjects.map((project) =>
-          project.id === updatedProject.id
-            ? {
-                ...updatedProject,
-                document: resuelto.document,
-                name: resuelto.document.project.name,
-              }
-            : project,
-        ),
-      )
-      // Si se tecleo durante el vuelo, esto queda en 'local' y no en
-      // 'synced': el indicador no puede decir "Guardado" con cosas sin subir.
-      // Ademas la fila del estado es nueva, asi que este efecto vuelve a
-      // correr y programa la espera siguiente, ya con el sello nuevo.
-      setSyncStatus(resuelto.estado)
     }, 900)
 
     return () => window.clearTimeout(timeoutId)
@@ -538,6 +574,7 @@ export function ProjectList({ session }: ProjectListProps) {
     }
 
     localStorage.removeItem(localStorageKey(projectId))
+    delete documentosVivos.current[projectId]
     setProjects((currentProjects) =>
       currentProjects.filter((project) => project.id !== projectId),
     )
