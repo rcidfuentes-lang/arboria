@@ -8,6 +8,7 @@ import type {
 } from '../types/roadmap'
 import { Decisor } from './Decisor'
 import { Icon } from './Icon'
+import { contarDecisionesDelNodo, repuntarDecisionesDelNodo } from '../lib/decisiones-del-nodo'
 import {
   applyAutomaticStatuses,
   normalizeRoadmapDocument,
@@ -379,6 +380,26 @@ export function RoadmapEditor({
   const idInputRef = useRef<HTMLInputElement>(null)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
 
+  /**
+   * El renombrado pendiente de contestar: la fase, el id nuevo y cuantas
+   * decisiones citan el viejo. Mientras esto no es null hay un modal delante y
+   * no se ha tocado nada todavia.
+   */
+  const [renombrado, setRenombrado] = useState<{
+    idViejo: string
+    idNuevo: string
+    decisiones: number
+  } | null>(null)
+
+  /**
+   * La ultima busqueda que movio la seleccion. Sin esto, el efecto que
+   * autoselecciona la primera coincidencia se volvia a disparar cada vez que
+   * cambiaba el documento —al crear una fase, por ejemplo— y devolvia la
+   * seleccion a la coincidencia de la busqueda, quitandosela a la fase recien
+   * creada. Con el filtro puesto, eso dejaba el foco en el campo ID del padre.
+   */
+  const ultimaBusquedaAplicada = useRef('')
+
   const flatNodes = useMemo(() => flatten(document.nodes), [document.nodes])
   const selectedNode = selectedId === null ? null : findNode(document.nodes, selectedId)
   const selectedFlatNode = useMemo(
@@ -452,6 +473,10 @@ export function RoadmapEditor({
 
   function addNode(parentId: string, index?: number) {
     const node = createNode(collectNodeIds(document.nodes))
+    // El filtro se quita al crear. Una fase nueva no casa con lo que hubiera
+    // tecleado, asi que con el filtro puesto nacia invisible: no se veia, no
+    // parecia que hubiera pasado nada, y se pulsaba otra vez.
+    setQuery('')
     emitNodes(insertNode(document.nodes, parentId, node, index))
     setSelectedId(node.id)
     if (parentId) setExpandedIds((current) => new Set([...current, parentId]))
@@ -619,7 +644,17 @@ export function RoadmapEditor({
     if (key === 'id') setSelectedId(String(nextValue))
   }
 
-  function commitSelectedId() {
+  /**
+   * Renombrar una fase pide un gesto explicito: Enter, o el boton de al lado.
+   *
+   * Antes bastaba con salir del campo, y eso convertia cualquier despiste en un
+   * renombrado. El id de una fase es su nombre publico —sale en los informes,
+   * en el conector y en las decisiones que la citan—, asi que no puede cambiar
+   * porque alguien haya hecho clic en otro sitio. Salir del campo ahora
+   * descarta lo tecleado, que es lo que hace el resto del mundo con un campo
+   * que necesita confirmacion.
+   */
+  async function commitSelectedId() {
     if (!selectedNode) return
     const previousId = selectedNode.id
     const nextId = idDraft.trim()
@@ -630,25 +665,60 @@ export function RoadmapEditor({
       return
     }
 
-    setIdDraft(nextId)
     setErrorMessage('')
     if (nextId === previousId) return
 
+    // Si hay decisiones que citan la fase por su id viejo, se pregunta antes de
+    // tocar nada: el renombrado y el repunte se deciden juntos.
+    const decisiones = await contarDecisionesDelNodo(projectId, previousId)
+    if (decisiones > 0) {
+      setRenombrado({ idViejo: previousId, idNuevo: nextId, decisiones })
+      return
+    }
+
+    aplicarRenombrado(previousId, nextId)
+  }
+
+  function aplicarRenombrado(previousId: string, nextId: string) {
     emitNodes(updateNode(document.nodes, previousId, (node) => ({ ...node, id: nextId })))
+    setIdDraft(nextId)
     setSelectedId(nextId)
+  }
+
+  /** Renombra y, si Ruben lo pide, lleva las decisiones a la fase nueva. */
+  async function resolverRenombrado(repuntar: boolean) {
+    if (!renombrado) return
+    const { idViejo, idNuevo } = renombrado
+    setRenombrado(null)
+    aplicarRenombrado(idViejo, idNuevo)
+
+    if (!repuntar) return
+    const error = await repuntarDecisionesDelNodo(projectId, idViejo, idNuevo)
+    if (error) setErrorMessage(`La fase se renombro, pero las decisiones no: ${error}`)
+  }
+
+  function cancelarRenombrado() {
+    setIdDraft(renombrado?.idViejo ?? selectedNode?.id ?? '')
+    setRenombrado(null)
+  }
+
+  /** Lo tecleado en el ID todavia no es el id de nada. */
+  const idSinConfirmar = Boolean(selectedNode) && idDraft.trim() !== selectedNode?.id
+
+  function descartarIdDraft() {
+    setIdDraft(selectedNode?.id ?? '')
+    setErrorMessage('')
   }
 
   function handleIdKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault()
       commitSelectedId()
-      event.currentTarget.blur()
     }
 
     if (event.key === 'Escape') {
       event.preventDefault()
-      setIdDraft(selectedNode?.id ?? '')
-      setErrorMessage('')
+      descartarIdDraft()
       event.currentTarget.blur()
     }
   }
@@ -773,11 +843,19 @@ export function RoadmapEditor({
 
   useEffect(() => {
     const text = query.trim().toLowerCase()
-    if (!text) return
+    if (!text) {
+      ultimaBusquedaAplicada.current = ''
+      return
+    }
+    // Solo cuando cambia lo tecleado. El efecto depende tambien de flatNodes
+    // porque necesita el arbol para buscar, pero un cambio del documento no es
+    // una busqueda nueva y no debe mover la seleccion.
+    if (ultimaBusquedaAplicada.current === text) return
     const match = flatNodes.find(({ node }) =>
       [node.id, node.title, node.content].join(' ').toLowerCase().includes(text),
     )
     if (!match) return
+    ultimaBusquedaAplicada.current = text
     setSelectedId(match.node.id)
     setExpandedIds((current) => {
       const next = new Set(current)
@@ -1117,7 +1195,34 @@ export function RoadmapEditor({
                 <button className="secondary-button" onClick={copySelectedJson} title="Copiar rama JSON" type="button"><Icon name="copy" /> Copiar JSON</button>
               </div>
               <div className="editor-fields no-print">
-                <label>ID<input ref={idInputRef} onBlur={commitSelectedId} onChange={(event) => setIdDraft(event.target.value)} onKeyDown={handleIdKeyDown} value={idDraft} /></label>
+                <label>
+                  ID
+                  <input
+                    ref={idInputRef}
+                    onBlur={descartarIdDraft}
+                    onChange={(event) => setIdDraft(event.target.value)}
+                    onKeyDown={handleIdKeyDown}
+                    value={idDraft}
+                  />
+                  {idSinConfirmar ? (
+                    <span className="id-pendiente">
+                      {/* En onMouseDown, porque el onBlur del campo descarta lo
+                          tecleado y con onClick llegaria despues. */}
+                      <button
+                        className="id-confirm"
+                        onMouseDown={(event) => {
+                          event.preventDefault()
+                          commitSelectedId()
+                        }}
+                        title={`Renombrar la fase a "${idDraft.trim()}"`}
+                        type="button"
+                      >
+                        <Icon name="check" /> Renombrar
+                      </button>
+                      <span className="id-hint">Enter tambien. Salir del campo lo descarta.</span>
+                    </span>
+                  ) : null}
+                </label>
                 <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>
                 <label>Estado<select onChange={(event) => updateSelected('status', event.target.value as RoadmapNodeStatus)} value={selectedNode.status}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               </div>
@@ -1136,6 +1241,33 @@ export function RoadmapEditor({
           </section>
         </section>
       )}
+
+      {renombrado ? (
+        <div className="modal-backdrop no-print">
+          <section className="modal">
+            <h2>Renombrar {renombrado.idViejo} a {renombrado.idNuevo}</h2>
+            <p className="modal-hint">
+              {renombrado.decisiones === 1
+                ? 'Hay 1 decision que cita esta fase por su ID.'
+                : `Hay ${renombrado.decisiones} decisiones que citan esta fase por su ID.`}{' '}
+              El decisor guarda la fase como texto, asi que si no se cambian ahora
+              se quedaran apuntando a <code>{renombrado.idViejo}</code>, que ya no
+              existira.
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => resolverRenombrado(true)} type="button">
+                <Icon name="check" /> Renombrar y llevarme {renombrado.decisiones === 1 ? 'la decision' : `las ${renombrado.decisiones}`}
+              </button>
+              <button className="secondary-button" onClick={() => resolverRenombrado(false)} type="button">
+                Renombrar y dejarlas como estan
+              </button>
+              <button className="secondary-button" onClick={cancelarRenombrado} type="button">
+                Cancelar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {showImport ? (
         <div className="modal-backdrop no-print">

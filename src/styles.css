@@ -1511,6 +1511,26 @@ h2 {
   padding: 0.6rem 0.7rem;
 }
 
+/* El renombrado pendiente. Solo se pinta mientras lo tecleado no es todavia el
+   id de la fase, para no dejar un boton apagado ocupando una columna estrecha. */
+.id-pendiente {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.id-confirm {
+  font-size: 0.82rem;
+  justify-self: start;
+  padding: 0.4rem 0.7rem;
+}
+
+.id-hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .content-editor {
   align-self: stretch;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
