@@ -13,6 +13,11 @@
   --brand-strong: #067233;
   --danger: #a23030;
   --danger-soft: #fff1f1;
+  /* El ambar de "esto no esta mal, pero miralo". Ya existia en el indicador de
+     guardado local; ahora que lo usa tambien el aviso de fase desconocida,
+     vale la pena que sea un token y no dos veces el mismo numero. */
+  --aviso: #767526;
+  --aviso-soft: #f9fbec;
   --shadow: 0 18px 45px rgba(23, 49, 34, 0.1);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -387,8 +392,8 @@ h2 {
 }
 
 .sync-state.local {
-  background: #f9fbec;
-  color: #767526;
+  background: var(--aviso-soft);
+  color: var(--aviso);
 }
 
 .sync-state.syncing {
@@ -822,6 +827,16 @@ h2 {
   flex: 1 1 180px;
 }
 
+/* Un hueco con raya entre volver al listado y cerrar sesion. Estaban pegados,
+   con dos iconos de flecha, y uno sale del proyecto y el otro de la cuenta. */
+.barra-separador {
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+  flex: 0 0 auto;
+  margin: 0.15rem 0.3rem;
+  width: 0;
+}
+
 /* Proyectos y cerrar sesion, siempre al final de su linea. */
 .roadmap-bar > .toolbar-group:last-child {
   margin-left: auto;
@@ -981,12 +996,23 @@ h2 {
   overflow: hidden;
 }
 
+.tree-head {
+  border-bottom: 1px solid var(--border);
+}
+
 .tree-mini-actions {
   align-items: center;
-  border-bottom: 1px solid var(--border);
   display: flex;
   gap: 0.45rem;
   padding: 0.55rem 0.65rem;
+}
+
+.tree-matches {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin: 0;
+  padding: 0 0.7rem 0.5rem;
 }
 
 .tree-mini-actions input,
@@ -1511,6 +1537,26 @@ h2 {
   padding: 0.6rem 0.7rem;
 }
 
+/* El renombrado pendiente. Solo se pinta mientras lo tecleado no es todavia el
+   id de la fase, para no dejar un boton apagado ocupando una columna estrecha. */
+.id-pendiente {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.id-confirm {
+  font-size: 0.82rem;
+  justify-self: start;
+  padding: 0.4rem 0.7rem;
+}
+
+.id-hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .content-editor {
   align-self: stretch;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -1758,11 +1804,64 @@ h2 {
   margin: 0;
 }
 
+/* Un boton que se lee como un enlace: va dentro de una frase, asi que no puede
+   parecer un boton ni romper la linea. */
+.enlace-a-decision {
+  background: transparent;
+  border-radius: 4px;
+  color: var(--brand-strong);
+  display: inline;
+  font: inherit;
+  font-weight: 800;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.enlace-a-decision:hover {
+  background: transparent;
+  color: var(--text);
+}
+
 .decisor-campo {
   display: grid;
   font-size: 0.8rem;
   font-weight: 600;
   gap: 0.3rem;
+}
+
+/* La fase que no esta en el arbol. No es un error —la decision se guarda
+   igual— asi que se avisa en ambar y no en rojo. */
+.campo-en-duda {
+  background: var(--aviso-soft);
+  border-color: var(--aviso);
+}
+
+.aviso-decisiones {
+  align-items: center;
+  background: var(--aviso-soft);
+  border: 1px solid var(--aviso);
+  border-radius: 8px;
+  color: var(--aviso);
+  display: flex;
+  flex-wrap: wrap;
+  font-weight: 600;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin: 0 0.75rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.aviso-decisiones button {
+  flex: 0 0 auto;
+}
+
+.aviso-en-duda {
+  color: var(--aviso);
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
 }
 
 .decisor-campo input,

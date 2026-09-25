@@ -8,6 +8,8 @@ import type {
 } from '../types/roadmap'
 import { Decisor } from './Decisor'
 import { Icon } from './Icon'
+import type { DecisionesDelNodo } from '../lib/decisiones-del-nodo'
+import { contarDecisionesDelNodo, encolarRepunte } from '../lib/decisiones-del-nodo'
 import {
   applyAutomaticStatuses,
   normalizeRoadmapDocument,
@@ -20,6 +22,8 @@ import {
 type SyncStatus = 'local' | 'syncing' | 'synced' | 'error'
 
 type RoadmapEditorProps = {
+  /** Lo que haya pasado con las decisiones de un renombrado. Vacio si no hay nada que decir. */
+  avisoDecisiones: string
   availableProjects: RoadmapProject[]
   document: RoadmapDocument
   /** El uuid de la fila del proyecto. Lo necesita el decisor, que escribe en su propia tabla. */
@@ -28,6 +32,7 @@ type RoadmapEditorProps = {
   syncStatus: SyncStatus
   onBack: () => void
   onChange: (document: RoadmapDocument) => void
+  onReintentarDecisiones: () => void
   onSignOut: () => void
 }
 
@@ -100,11 +105,46 @@ function createUniqueNodeId(existingIds: Set<string>, base = 'fase') {
   return candidate
 }
 
-function createNode(existingIds: Set<string>): RoadmapNode {
-  const id = createUniqueNodeId(existingIds)
+/** El titulo con el que nace una fase. Se compara con el para saber si sigue sin tocar. */
+const tituloPorDefecto = 'Nueva fase'
+
+/**
+ * El id que se propone para una fase nueva: el siguiente de su rama.
+ *
+ * Los ids los escribe Ruben, y eso no cambia —esto es una propuesta, y llega
+ * seleccionada para que teclear encima la borre—. Pero proponer
+ * "fase-mugu6hn8-a1a30b68" era proponer nada: habia que vaciar veintidos
+ * caracteres antes de poder escribir. Colgando de SP4.1 con SP4.1.1 y SP4.1.2
+ * dentro, lo que casi siempre toca es SP4.1.3.
+ *
+ * Si la rama no sigue la convencion numerica, o es una fase raiz, no hay nada
+ * sensato que proponer y se vuelve al id generado, que al menos es unico.
+ */
+function proponerIdDeRama(parentId: string, hermanos: RoadmapNode[], existingIds: Set<string>) {
+  if (!parentId) return ''
+
+  const prefijo = `${parentId}.`
+  let ultimo = 0
+  for (const hermano of hermanos) {
+    if (!hermano.id.startsWith(prefijo)) continue
+    const cola = hermano.id.slice(prefijo.length)
+    if (!/^\d+$/.test(cola)) continue
+    ultimo = Math.max(ultimo, Number(cola))
+  }
+
+  let candidato = `${prefijo}${ultimo + 1}`
+  while (existingIds.has(candidato)) {
+    ultimo += 1
+    candidato = `${prefijo}${ultimo + 1}`
+  }
+  return candidato
+}
+
+function createNode(existingIds: Set<string>, idPropuesto = ''): RoadmapNode {
+  const id = idPropuesto || createUniqueNodeId(existingIds)
   return {
     id,
-    title: 'Nueva fase',
+    title: tituloPorDefecto,
     status: 'planned',
     content: '',
     children: [],
@@ -123,6 +163,11 @@ function walk(
     callback(node, parentId, index, depth, nextPath)
     walk(node.children, callback, node.id, depth + 1, nextPath)
   })
+}
+
+/** Lo que el filtro del arbol mira de una fase. En un sitio, porque lo usan tres. */
+function casaConLaBusqueda(node: RoadmapNode, texto: string) {
+  return [node.id, node.title, node.content].join(' ').toLowerCase().includes(texto)
 }
 
 function flatten(nodes: RoadmapNode[]) {
@@ -354,9 +399,11 @@ export function RoadmapEditor({
   projectId,
   onBack,
   onChange,
+  onReintentarDecisiones,
   onSignOut,
   syncError,
   syncStatus,
+  avisoDecisiones,
 }: RoadmapEditorProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
@@ -377,7 +424,29 @@ export function RoadmapEditor({
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const [idDraft, setIdDraft] = useState('')
   const idInputRef = useRef<HTMLInputElement>(null)
+  /** El ultimo focusIdNonce ya atendido, para no reseleccionar en cada tecla. */
+  const nonceAtendido = useRef(0)
   const nodeRefs = useRef<Record<string, HTMLLIElement | null>>({})
+
+  /**
+   * El renombrado pendiente de contestar: la fase, el id nuevo y cuantas
+   * decisiones citan el viejo. Mientras esto no es null hay un modal delante y
+   * no se ha tocado nada todavia.
+   */
+  const [renombrado, setRenombrado] = useState<{
+    idViejo: string
+    idNuevo: string
+    decisiones: DecisionesDelNodo
+  } | null>(null)
+
+  /**
+   * La ultima busqueda que movio la seleccion. Sin esto, el efecto que
+   * autoselecciona la primera coincidencia se volvia a disparar cada vez que
+   * cambiaba el documento —al crear una fase, por ejemplo— y devolvia la
+   * seleccion a la coincidencia de la busqueda, quitandosela a la fase recien
+   * creada. Con el filtro puesto, eso dejaba el foco en el campo ID del padre.
+   */
+  const ultimaBusquedaAplicada = useRef('')
 
   const flatNodes = useMemo(() => flatten(document.nodes), [document.nodes])
   const selectedNode = selectedId === null ? null : findNode(document.nodes, selectedId)
@@ -390,24 +459,34 @@ export function RoadmapEditor({
     const totalProgress = document.nodes.reduce((total, node) => total + nodeProgress(node), 0)
     return Math.round(totalProgress / document.nodes.length)
   }, [document.nodes])
+  const buscando = query.trim().length > 0
   const visibleIds = useMemo(() => {
     const text = query.trim().toLowerCase()
     if (!text) return new Set(flatNodes.map(({ node }) => node.id))
-    const matches = flatNodes.filter(({ node }) =>
-      [node.id, node.title, node.content].join(' ').toLowerCase().includes(text),
-    )
     const ids = new Set<string>()
-    matches.forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
+    flatNodes
+      .filter(({ node }) => casaConLaBusqueda(node, text))
+      .forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
     return ids
   }, [flatNodes, query])
+  /**
+   * Cuantas fases casan de verdad, sin contar las que solo estan ahi por ser
+   * madres de una que casa. Es el numero que contesta "¿estan todas?", que es
+   * justo lo que el arbol no decia: el decisor lleva su "N a la vista" desde el
+   * principio y el arbol no tenia nada.
+   */
+  const coincidencias = useMemo(() => {
+    const text = query.trim().toLowerCase()
+    if (!text) return null
+    return flatNodes.filter(({ node }) => casaConLaBusqueda(node, text)).length
+  }, [flatNodes, query])
   const navigationNodes = useMemo(() => {
-    const isSearching = query.trim().length > 0
     return flatNodes.filter(({ node, path }) => {
       if (!visibleIds.has(node.id)) return false
-      if (isSearching) return true
+      if (buscando) return true
       return path.slice(0, -1).every((ancestor) => expandedIds.has(ancestor.id))
     })
-  }, [expandedIds, flatNodes, query, visibleIds])
+  }, [buscando, expandedIds, flatNodes, visibleIds])
   const canvasNodes = useMemo(() => layoutCanvasNodes(navigationNodes), [navigationNodes])
   const canvasLookup = useMemo(
     () => new Map(canvasNodes.map((item) => [item.node.id, item])),
@@ -424,12 +503,35 @@ export function RoadmapEditor({
   }, [flatNodes, selectedNode])
 
   useEffect(() => {
-    if (focusIdNonce > 0) idInputRef.current?.focus()
-  }, [focusIdNonce])
-
-  useEffect(() => {
     setIdDraft(selectedNode?.id ?? '')
   }, [selectedNode?.id])
+
+  /**
+   * El repunte se hace cuando el roadmap ya esta en el servidor, no antes.
+   *
+   * 'synced' quiere decir que lo que hay en pantalla es lo que hay arriba. Si
+   * en vez de eso se llega a 'error' —el guardado se ha rendido, o la guarda de
+   * updated_at ha visto un conflicto— el repunte se abandona y las decisiones
+   * se quedan en el id viejo, que en el servidor sigue existiendo porque el
+   * renombrado no llego a subir. Es el mismo resultado que contestar "dejalas
+   * como estan", y se puede rehacer renombrando otra vez.
+   */
+  /**
+   * Al crear una fase, el campo ID se enfoca con su contenido seleccionado.
+   *
+   * select() y no focus(): el id llega propuesto —el siguiente de la rama— y
+   * con el cursor al final habia que vaciarlo a mano antes de escribir otro.
+   *
+   * Espera a que el borrador se haya puesto al dia con la fase nueva. Antes se
+   * seleccionaba en cuanto subia el contador, que es un render antes de que el
+   * campo tenga el valor nuevo, y la seleccion se perdia al llegar este.
+   */
+  useEffect(() => {
+    if (focusIdNonce === 0 || nonceAtendido.current === focusIdNonce) return
+    if (idDraft !== (selectedNode?.id ?? '')) return
+    nonceAtendido.current = focusIdNonce
+    idInputRef.current?.select()
+  }, [focusIdNonce, idDraft, selectedNode?.id])
 
   function emitNodes(nodes: RoadmapNode[]) {
     onChange({ ...document, nodes: applyAutomaticStatuses(nodes) })
@@ -451,7 +553,13 @@ export function RoadmapEditor({
   }
 
   function addNode(parentId: string, index?: number) {
-    const node = createNode(collectNodeIds(document.nodes))
+    const existentes = collectNodeIds(document.nodes)
+    const hermanos = parentId ? (findNode(document.nodes, parentId)?.children ?? []) : document.nodes
+    const node = createNode(existentes, proponerIdDeRama(parentId, hermanos, existentes))
+    // El filtro se quita al crear. Una fase nueva no casa con lo que hubiera
+    // tecleado, asi que con el filtro puesto nacia invisible: no se veia, no
+    // parecia que hubiera pasado nada, y se pulsaba otra vez.
+    setQuery('')
     emitNodes(insertNode(document.nodes, parentId, node, index))
     setSelectedId(node.id)
     if (parentId) setExpandedIds((current) => new Set([...current, parentId]))
@@ -619,7 +727,17 @@ export function RoadmapEditor({
     if (key === 'id') setSelectedId(String(nextValue))
   }
 
-  function commitSelectedId() {
+  /**
+   * Renombrar una fase pide un gesto explicito: Enter, o el boton de al lado.
+   *
+   * Antes bastaba con salir del campo, y eso convertia cualquier despiste en un
+   * renombrado. El id de una fase es su nombre publico —sale en los informes,
+   * en el conector y en las decisiones que la citan—, asi que no puede cambiar
+   * porque alguien haya hecho clic en otro sitio. Salir del campo ahora
+   * descarta lo tecleado, que es lo que hace el resto del mundo con un campo
+   * que necesita confirmacion.
+   */
+  async function commitSelectedId() {
     if (!selectedNode) return
     const previousId = selectedNode.id
     const nextId = idDraft.trim()
@@ -630,25 +748,64 @@ export function RoadmapEditor({
       return
     }
 
-    setIdDraft(nextId)
     setErrorMessage('')
     if (nextId === previousId) return
 
+    // Si hay decisiones que citan la fase por su id viejo, se pregunta antes de
+    // tocar nada: el renombrado y el repunte se deciden juntos.
+    const decisiones = await contarDecisionesDelNodo(projectId, previousId)
+    if (decisiones.total > 0) {
+      setRenombrado({ idViejo: previousId, idNuevo: nextId, decisiones })
+      return
+    }
+
+    aplicarRenombrado(previousId, nextId)
+  }
+
+  function aplicarRenombrado(previousId: string, nextId: string) {
     emitNodes(updateNode(document.nodes, previousId, (node) => ({ ...node, id: nextId })))
+    setIdDraft(nextId)
     setSelectedId(nextId)
+  }
+
+  /**
+   * Renombra y, si Ruben lo pide, deja el repunte apuntado para cuando el
+   * roadmap haya llegado al servidor. Aqui no se escribe ninguna decision.
+   */
+  function resolverRenombrado(repuntar: boolean) {
+    if (!renombrado) return
+    const { idViejo, idNuevo } = renombrado
+    setRenombrado(null)
+    aplicarRenombrado(idViejo, idNuevo)
+    // Se apunta en localStorage, no en memoria: el guardado del arbol puede
+    // terminar despues de cerrar el proyecto, o incluso en la sesion siguiente,
+    // y el repunte tiene que seguir ahi cuando llegue. Lo ejecuta ProjectList,
+    // que es quien sabe cuando el arbol ha llegado al servidor.
+    if (repuntar) encolarRepunte(projectId, { idViejo, idNuevo })
+  }
+
+  function cancelarRenombrado() {
+    setIdDraft(renombrado?.idViejo ?? selectedNode?.id ?? '')
+    setRenombrado(null)
+  }
+
+  /** Lo tecleado en el ID todavia no es el id de nada. */
+  const idSinConfirmar = Boolean(selectedNode) && idDraft.trim() !== selectedNode?.id
+
+  function descartarIdDraft() {
+    setIdDraft(selectedNode?.id ?? '')
+    setErrorMessage('')
   }
 
   function handleIdKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault()
       commitSelectedId()
-      event.currentTarget.blur()
     }
 
     if (event.key === 'Escape') {
       event.preventDefault()
-      setIdDraft(selectedNode?.id ?? '')
-      setErrorMessage('')
+      descartarIdDraft()
       event.currentTarget.blur()
     }
   }
@@ -773,11 +930,19 @@ export function RoadmapEditor({
 
   useEffect(() => {
     const text = query.trim().toLowerCase()
-    if (!text) return
+    if (!text) {
+      ultimaBusquedaAplicada.current = ''
+      return
+    }
+    // Solo cuando cambia lo tecleado. El efecto depende tambien de flatNodes
+    // porque necesita el arbol para buscar, pero un cambio del documento no es
+    // una busqueda nueva y no debe mover la seleccion.
+    if (ultimaBusquedaAplicada.current === text) return
     const match = flatNodes.find(({ node }) =>
       [node.id, node.title, node.content].join(' ').toLowerCase().includes(text),
     )
     if (!match) return
+    ultimaBusquedaAplicada.current = text
     setSelectedId(match.node.id)
     setExpandedIds((current) => {
       const next = new Set(current)
@@ -804,7 +969,16 @@ export function RoadmapEditor({
 
   function renderNode(node: RoadmapNode, depth = 0, parentId = '', index = 0) {
     if (!visibleIds.has(node.id)) return null
-    const expanded = expandedIds.has(node.id)
+    /**
+     * Mientras se busca, una coincidencia se ve aunque su madre este plegada.
+     * Antes no: el arbol solo pintaba hijos de lo expandido y el efecto de
+     * busqueda solo abria la rama de la primera coincidencia, asi que buscar
+     * "SP4.1" ensenaba tres filas de cinco que casaban y no habia forma de
+     * saber que faltaban dos. El lienzo de Esquema ya lo hacia bien.
+     */
+    const hijosVisibles = node.children.filter((child) => visibleIds.has(child.id))
+    const abiertoPorLaBusqueda = buscando && hijosVisibles.length > 0
+    const expanded = expandedIds.has(node.id) || abiertoPorLaBusqueda
     const parentOptions = flatNodes.filter((item) => item.node.id !== node.id && !contains(node, item.node.id))
     const progress = nodeProgress(node)
 
@@ -818,19 +992,49 @@ export function RoadmapEditor({
       >
         <div className={`file-row ${selectedId === node.id ? 'selected' : ''}`} style={{ '--depth': depth } as CSSProperties}>
           <span className="tree-line" aria-hidden="true" />
-          <button className="tree-toggle" disabled={node.children.length === 0} onClick={() => toggleNodeExpansion(node)} aria-label={expanded ? 'Contraer fase' : 'Expandir fase'} title={expanded ? 'Contraer' : 'Expandir'} type="button">
+          <button
+            className="tree-toggle"
+            disabled={node.children.length === 0 || abiertoPorLaBusqueda}
+            onClick={() => toggleNodeExpansion(node)}
+            aria-label={expanded ? 'Contraer fase' : 'Expandir fase'}
+            title={abiertoPorLaBusqueda ? 'Mientras buscas se ven todas las coincidencias' : expanded ? 'Contraer' : 'Expandir'}
+            type="button"
+          >
             {node.children.length === 0 ? null : <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />}
           </button>
-          <button className="file-name" onClick={() => selectNode(node)} type="button">
-            <span className={`state-dot ${node.status}`} />
+          {/* El title lleva el id, el titulo y el estado. En el arbol de Songplay
+              98 de 143 titulos salen cortados a lo ancho por defecto, y sin esto
+              no habia forma de leer el que se cortaba sin seleccionar la fase.
+              El estado va aqui tambien porque el punto es lo unico que lo dice y
+              es un circulo de ocho pixeles sin leyenda en ninguna pantalla. */}
+          <button
+            className="file-name"
+            onClick={() => selectNode(node)}
+            title={`${node.id || 'sin-id'} — ${node.title || tituloPorDefecto} · ${statusLabel(node.status)}`}
+            type="button"
+          >
+            <span className={`state-dot ${node.status}`} title={statusLabel(node.status)} />
             <strong>{node.id || 'sin-id'}</strong>
-            <span>{node.title || 'Nueva fase'}</span>
+            <span>{node.title || tituloPorDefecto}</span>
           </button>
           <span className="progress-chip" title={`${progress}% completado`}>{progress}%</span>
           <button aria-label="Copiar fase" className="copy-button" onClick={() => copyText(nodeMarkdown(node))} title="Copiar fase" type="button">
             <Icon name="copy" />
           </button>
-          <button aria-label="Mas acciones" className="menu-button" onClick={() => setOpenMenuId(openMenuId === node.id ? null : node.id)} title="Mas acciones" type="button">
+          {/* Abrir el menu selecciona la fila. Antes no, y habia dos nociones de
+              "fase actual" a la vez: se podia estar editando SP4.1 en el panel
+              de la derecha y borrar SP4.3 desde su menu tres filas mas abajo,
+              con el panel ensenando todavia SP4.1. */}
+          <button
+            aria-label="Mas acciones"
+            className="menu-button"
+            onClick={() => {
+              if (openMenuId !== node.id) selectNode(node)
+              setOpenMenuId(openMenuId === node.id ? null : node.id)
+            }}
+            title="Mas acciones"
+            type="button"
+          >
             <Icon name="more" />
           </button>
         </div>
@@ -855,7 +1059,9 @@ export function RoadmapEditor({
             <button className="text-danger" onClick={() => deleteNode(node)} type="button"><Icon name="trash" /> Eliminar</button>
           </div>
         ) : null}
-        {expanded && node.children.length > 0 ? (
+        {/* Se recorren todos los hijos, no solo los visibles, para que el indice
+            que reciben siga siendo el de verdad: "Hermana" inserta en index + 1. */}
+        {expanded && (buscando ? hijosVisibles.length > 0 : node.children.length > 0) ? (
           <ul className="file-tree-list">
             {node.children.map((child, childIndex) => renderNode(child, depth + 1, node.id, childIndex))}
           </ul>
@@ -994,12 +1200,30 @@ export function RoadmapEditor({
           </>
         ) : null}
         <div className="toolbar-group">
-          <button aria-label="Volver a proyectos" className="icon-only secondary-button" onClick={onBack} title="Proyectos" type="button"><Icon name="folderOpen" /></button>
+          {/* Volver lleva flecha atras y no una carpeta abierta: la carpeta decia
+              "abrir algo" justo en el boton que cierra el proyecto. */}
+          <button aria-label="Volver a proyectos" className="icon-only secondary-button" onClick={onBack} title="Volver a proyectos" type="button"><Icon name="arrowLeft" /></button>
+          {/* Separado del anterior a proposito: uno sale del proyecto y el otro
+              de la cuenta, y estaban pegados con dos iconos de flecha. */}
+          <span className="barra-separador" aria-hidden="true" />
           <button aria-label="Cerrar sesion" className="icon-only secondary-button" onClick={onSignOut} title="Cerrar sesion" type="button"><Icon name="logOut" /></button>
         </div>
       </header>
 
       {errorMessage && enElArbol ? <p className="form-error no-print">{errorMessage}</p> : null}
+
+      {/* El arbol se guardo pero sus decisiones no se movieron. En ambar y no en
+          rojo porque no se ha perdido nada —la cola se reintenta sola— pero no
+          puede quedarse callado: hasta que se repunten, esas decisiones citan
+          una fase que ya no existe. */}
+      {avisoDecisiones ? (
+        <p className="aviso-decisiones no-print" role="status">
+          <span>{avisoDecisiones}</span>
+          <button className="secondary-button" onClick={onReintentarDecisiones} type="button">
+            Reintentar ahora
+          </button>
+        </p>
+      ) : null}
 
       {editorMode === 'canvas' ? (
         <section className="branch-canvas-panel full-screen no-print" aria-label="Editor visual de ramas">
@@ -1073,16 +1297,32 @@ export function RoadmapEditor({
             </div>
           </section>
       ) : editorMode === 'decisor' ? (
-        <Decisor projectId={projectId} proyecto={document.project} />
+        <Decisor
+          fasesDelRoadmap={flatNodes.map(({ node }) => node.id)}
+          projectId={projectId}
+          proyecto={document.project}
+        />
       ) : (
         <section className="roadmap-body">
           <aside className="file-tree no-print">
+            {/* Cabecera del arbol: los botones y, cuando se busca, el recuento.
+                Van juntos en un solo hijo porque .file-tree son dos filas y la
+                de abajo es la que hace scroll. */}
+            <div className="tree-head">
             <div className="tree-mini-actions">
               <button onClick={() => addNode('')} title="Añadir fase raiz" type="button"><Icon name="plus" /> Raiz</button>
               <input aria-label="Buscar fases" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar fases" type="search" value={query} />
               <button aria-label="Expandir todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} title="Expandir todo" type="button"><Icon name="maximize" /></button>
               <button aria-label="Contraer todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set())} title="Contraer todo" type="button"><Icon name="minimize" /></button>
               <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
+            </div>
+            {coincidencias !== null ? (
+              <p className="tree-matches" role="status">
+                {coincidencias === 0
+                  ? 'Ninguna coincidencia'
+                  : `${coincidencias} ${coincidencias === 1 ? 'coincidencia' : 'coincidencias'} de ${flatNodes.length} fases`}
+              </p>
+            ) : null}
             </div>
             <ul className="file-tree-list root">
               {document.nodes.map((node, index) => renderNode(node, 0, '', index))}
@@ -1113,12 +1353,53 @@ export function RoadmapEditor({
                 <button className="secondary-button" onClick={() => openImport('append-to-selected')} title="Importar como subfases" type="button"><Icon name="upload" /> Importar debajo</button>
                 <button className="secondary-button" onClick={() => openImport('replace-selected')} title="Reemplazar esta rama" type="button"><Icon name="import" /> Reemplazar rama</button>
                 <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
-                <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase" type="button"><Icon name="check" /></button>
+                {/* Bandera y no check: esto no acepta nada, pone la fase en cerrada y
+                    escribe en el documento. El check queda para confirmar. */}
+                <button aria-label="Cerrar fase" className="icon-only secondary-button" disabled={selectedNode.status === 'closed'} onClick={() => closeNode(selectedNode)} title="Cerrar fase (la pone en cerrada)" type="button"><Icon name="flag" /></button>
                 <button className="secondary-button" onClick={copySelectedJson} title="Copiar rama JSON" type="button"><Icon name="copy" /> Copiar JSON</button>
               </div>
               <div className="editor-fields no-print">
-                <label>ID<input ref={idInputRef} onBlur={commitSelectedId} onChange={(event) => setIdDraft(event.target.value)} onKeyDown={handleIdKeyDown} value={idDraft} /></label>
-                <label>Título<input onChange={(event) => updateSelected('title', event.target.value)} value={selectedNode.title} /></label>
+                <label>
+                  ID
+                  <input
+                    ref={idInputRef}
+                    onBlur={descartarIdDraft}
+                    onChange={(event) => setIdDraft(event.target.value)}
+                    onKeyDown={handleIdKeyDown}
+                    value={idDraft}
+                  />
+                  {idSinConfirmar ? (
+                    <span className="id-pendiente">
+                      {/* En onMouseDown, porque el onBlur del campo descarta lo
+                          tecleado y con onClick llegaria despues. */}
+                      <button
+                        className="id-confirm"
+                        onMouseDown={(event) => {
+                          event.preventDefault()
+                          commitSelectedId()
+                        }}
+                        title={`Renombrar la fase a "${idDraft.trim()}"`}
+                        type="button"
+                      >
+                        <Icon name="check" /> Renombrar
+                      </button>
+                      <span className="id-hint">Enter tambien. Salir del campo lo descarta.</span>
+                    </span>
+                  ) : null}
+                </label>
+                <label>
+                  Título
+                  {/* Mientras siga siendo el titulo con el que nacio, entrar en el
+                      campo lo selecciona: teclear lo reemplaza en vez de anadirse
+                      detras y dejar "Nueva faseRecorte de frontera". */}
+                  <input
+                    onChange={(event) => updateSelected('title', event.target.value)}
+                    onFocus={(event) => {
+                      if (event.target.value === tituloPorDefecto) event.target.select()
+                    }}
+                    value={selectedNode.title}
+                  />
+                </label>
                 <label>Estado<select onChange={(event) => updateSelected('status', event.target.value as RoadmapNodeStatus)} value={selectedNode.status}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               </div>
               <textarea
@@ -1136,6 +1417,40 @@ export function RoadmapEditor({
           </section>
         </section>
       )}
+
+      {renombrado ? (
+        <div className="modal-backdrop no-print">
+          <section className="modal">
+            <h2>Renombrar {renombrado.idViejo} a {renombrado.idNuevo}</h2>
+            <p className="modal-hint">
+              {renombrado.decisiones.total === 1
+                ? 'Hay 1 decision que cita esta fase por su ID'
+                : `Hay ${renombrado.decisiones.total} decisiones que citan esta fase por su ID`}
+              {renombrado.decisiones.inactivas > 0
+                ? ` (${renombrado.decisiones.activas} ${renombrado.decisiones.activas === 1 ? 'activa' : 'activas'} y ${renombrado.decisiones.inactivas} ${renombrado.decisiones.inactivas === 1 ? 'inactiva' : 'inactivas'}; las inactivas se llevan tambien, porque una decision retirada sigue explicando por que se hizo lo que se hizo)`
+                : ''}
+              . El decisor guarda la fase como texto, asi que si no se cambian
+              ahora se quedaran apuntando a <code>{renombrado.idViejo}</code>, que
+              ya no existira.
+            </p>
+            <p className="modal-hint">
+              Primero se guarda el arbol y despues se mueven las decisiones. Si el
+              guardado falla, no se toca ninguna.
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => resolverRenombrado(true)} type="button">
+                <Icon name="check" /> Renombrar y llevarme {renombrado.decisiones.total === 1 ? 'la decision' : `las ${renombrado.decisiones.total}`}
+              </button>
+              <button className="secondary-button" onClick={() => resolverRenombrado(false)} type="button">
+                Renombrar y dejarlas como estan
+              </button>
+              <button className="secondary-button" onClick={cancelarRenombrado} type="button">
+                Cancelar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {showImport ? (
         <div className="modal-backdrop no-print">
