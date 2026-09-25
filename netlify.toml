@@ -71,3 +71,30 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Cabeceras
+#
+# Las de seguridad van a todo, y la que mas importa es la primera: sin ella,
+# /oauth/autorizar se puede meter en un iframe, y como el registro de clientes
+# es publico por especificacion, eso es una cadena entera —registrar un
+# cliente, enmarcar la pantalla, conseguir un clic donde esta el boton de
+# conceder— que termina en permiso de lectura sobre un roadmap.
+#
+# Aqui no hay Content-Security-Policy todavia. No es un olvido: hay que
+# dejar pasar a Supabase y comprobar antes que el bundle de Vite no necesita
+# estilos en linea. Las cuatro de abajo no rompen nada y se pueden poner hoy.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+# Los ficheros de /assets llevan el hash del contenido en el nombre: si cambia
+# el fichero, cambia el nombre. Revalidarlos en cada visita es pagar un viaje
+# de ida y vuelta por algo que no puede haber cambiado.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

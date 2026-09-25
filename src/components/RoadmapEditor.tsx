@@ -293,10 +293,32 @@ function nodeJson(node: RoadmapNode): string {
   })
 }
 
+/**
+ * Lo que escribe Ruben es texto, no HTML. Aqui se convierte en HTML pegando
+ * cadenas, y lo que sale entra por dangerouslySetInnerHTML en la vista de
+ * impresion, asi que el texto se escapa antes de tocar ninguna etiqueta.
+ *
+ * No es solo una defensa: un titulo con un signo de menor que ya rompia el
+ * HTML de la impresion sin que nadie atacara nada. Y el contenido de un nodo
+ * no siempre lo ha escrito Ruben —entra tambien por las cuatro importaciones
+ * de JSON—, de modo que aqui hay que tratarlo como texto de fuera.
+ */
+function escaparHtml(texto: string) {
+  return texto
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 function markdownToHtml(markdown: string) {
   return markdown
     .split('\n')
-    .map((line) => {
+    .map((linea) => {
+      // Se escapa la linea entera antes de mirarla. El escape no toca ni las
+      // almohadillas, ni el guion de la lista, ni los asteriscos, asi que las
+      // tres reglas de abajo siguen viendo lo mismo que veian.
+      const line = escaparHtml(linea)
       const heading = line.match(/^(#{1,6})\s+(.*)$/)
       if (heading) return `<h${heading[1].length}>${heading[2]}</h${heading[1].length}>`
       if (line.startsWith('- ')) return `<li>${line.slice(2)}</li>`

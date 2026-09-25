@@ -1406,7 +1406,13 @@ h2 {
 
 .text-editor {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  /* Cuatro filas, que son los cuatro hijos que hay: el progreso, los botones,
+     los campos y el area de contenido. Habia una quinta, y sobraba: el
+     textarea se quedaba en la cuarta, que es 'auto', y por eso salia con sus
+     dos filas de alto mientras la de abajo se quedaba vacia con 460 px. El
+     align-self: stretch de .content-editor ya estaba puesto y no podia hacer
+     nada contra una fila que se encoge hasta su contenido. */
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   align-items: start;
   gap: 0.65rem;
   min-height: 0;

@@ -288,8 +288,19 @@ export function ProjectList({ session }: ProjectListProps) {
     return () => window.clearTimeout(timeoutId)
   }, [activeProject, syncStatus])
 
-  async function handleDeleteProject(projectId: string) {
+  async function handleDeleteProject(project: RoadmapProject) {
+    // Borrar una fase ya preguntaba; borrar el proyecto entero, no. Y aqui se
+    // va mas: la base borra en cascada las claves de lectura del proyecto, sus
+    // decisiones y el historial de esas decisiones. No hay papelera ni deshacer.
+    const confirmado = window.confirm(
+      `Eliminar "${project.name}"?\n\n` +
+        'Se va el roadmap entero y, con el, sus claves de lectura, sus ' +
+        'decisiones y el historial de esas decisiones. No se puede deshacer.',
+    )
+    if (!confirmado) return
+
     setErrorMessage('')
+    const projectId = project.id
 
     const { error } = await supabaseClient
       .from('roadmap_projects')
@@ -410,7 +421,7 @@ export function ProjectList({ session }: ProjectListProps) {
                 <button
                   aria-label={`Eliminar ${project.name}`}
                   className="icon-only text-danger"
-                  onClick={() => handleDeleteProject(project.id)}
+                  onClick={() => handleDeleteProject(project)}
                   title="Eliminar"
                   type="button"
                 >
