@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { RoadmapEditor } from './RoadmapEditor'
 import { Icon } from './Icon'
@@ -7,6 +7,7 @@ import {
   parseRoadmapJson,
   stringifyRoadmapJson,
 } from '../lib/roadmap-document'
+import { mismoDocumento, resolverGuardado } from '../lib/guardado'
 import { supabase } from '../lib/supabase'
 import type { RoadmapDocument, RoadmapProject } from '../types/roadmap'
 
@@ -122,10 +123,6 @@ function escribirCache(projectId: string, document: RoadmapDocument, basadoEn: s
   localStorage.setItem(localStorageKey(projectId), JSON.stringify(cache))
 }
 
-function mismoDocumento(uno: RoadmapDocument, otro: RoadmapDocument) {
-  return stringifyRoadmapJson(uno) === stringifyRoadmapJson(otro)
-}
-
 function normalizeDocument(document: RoadmapDocument, project: RoadmapProject) {
   const normalizedDocument = normalizeRoadmapDocument(document)
   return {
@@ -156,6 +153,14 @@ export function ProjectList({ session }: ProjectListProps) {
   >('synced')
   const [syncError, setSyncError] = useState('')
   const [conflicto, setConflicto] = useState<Conflicto | null>(null)
+  /**
+   * Lo que hay en pantalla ahora mismo, fuera del estado de React. El
+   * autoguardado lo necesita al volver, y para entonces la variable que
+   * capturo cuando salio ya no dice la verdad.
+   */
+  const documentoVivo = useRef<{ id: string; document: RoadmapDocument } | null>(null)
+  /** Nunca dos escrituras del mismo proyecto a la vez: se pisarian el sello. */
+  const guardando = useRef(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [projectImportText, setProjectImportText] = useState('')
   const [showProjectImport, setShowProjectImport] = useState(false)
@@ -291,6 +296,7 @@ export function ProjectList({ session }: ProjectListProps) {
         currentProject.id === project.id ? { ...project, document } : currentProject,
       ),
     )
+    documentoVivo.current = { id: project.id, document }
     setActiveProjectId(project.id)
     setSyncError('')
     setSyncStatus(estado)
@@ -383,6 +389,7 @@ export function ProjectList({ session }: ProjectListProps) {
     // editando, que es lo que luego permite distinguir trabajo sin guardar
     // de una copia vieja.
     escribirCache(activeProject.id, nextDocument, activeProject.updated_at)
+    documentoVivo.current = { id: activeProject.id, document: nextDocument }
     setSyncStatus('local')
     setSyncError('')
     setProjects((currentProjects) =>
@@ -402,6 +409,15 @@ export function ProjectList({ session }: ProjectListProps) {
     if (!activeProject || syncStatus !== 'local') return
 
     const timeoutId = window.setTimeout(async () => {
+      // Si ya hay una escritura de este proyecto en vuelo, no se lanza otra:
+      // las dos partirian del mismo sello y la segunda le haria creer a la
+      // primera que alguien de fuera ha movido la fila. No se pierde nada por
+      // esperar, porque al volver la que esta en vuelo deja el estado en
+      // 'local' si quedo algo pendiente, y eso vuelve a programar esta misma
+      // espera.
+      if (guardando.current) return
+      guardando.current = true
+
       setSyncStatus('syncing')
       const updatedAt = new Date().toISOString()
       // La version sobre la que se ha estado editando. La guarda va en el
@@ -409,6 +425,9 @@ export function ProjectList({ session }: ProjectListProps) {
       // iba solo con el id, de modo que ganaba el ultimo que llegara y el otro
       // no se enteraba de que acababa de perder su trabajo.
       const versionDePartida = activeProject.updated_at
+      // Lo que viaja en esta peticion. Al volver hay que comparar con lo que
+      // haya en pantalla entonces, no con esto.
+      const documentoEnviado = activeProject.document
 
       const { data, error } = await supabaseClient
         .from('roadmap_projects')
@@ -421,6 +440,14 @@ export function ProjectList({ session }: ProjectListProps) {
         .eq('updated_at', versionDePartida)
         .select('*')
         .maybeSingle()
+
+      // Lo que hay en pantalla al volver. Si se ha tecleado durante el vuelo,
+      // esto ya no es lo que se mando.
+      const vivo = documentoVivo.current
+      const enPantalla =
+        vivo && vivo.id === activeProject.id ? vivo.document : documentoEnviado
+
+      guardando.current = false
 
       if (error) {
         setSyncError(error.message)
@@ -449,24 +476,38 @@ export function ProjectList({ session }: ProjectListProps) {
         setSyncError('Este proyecto ha cambiado en otro sitio mientras lo editabas.')
         setConflicto({
           project: actual as RoadmapProject,
-          documentoLocal: activeProject.document,
+          // Lo que se enfrenta a la del servidor es lo que hay en pantalla,
+          // con lo tecleado durante el vuelo incluido.
+          documentoLocal: enPantalla,
           motivo: 'al-guardar',
         })
         return
       }
 
       const updatedProject = data as RoadmapProject
-      escribirCache(
-        updatedProject.id,
-        updatedProject.document,
-        updatedProject.updated_at,
-      )
+      const resuelto = resolverGuardado(documentoEnviado, enPantalla, updatedProject)
+
+      // El sello es siempre el del servidor, y el texto el que corresponda: la
+      // cache queda con la version de arriba y con lo que hay escrito, que es
+      // justo lo que hace falta para que la escritura siguiente pase la guarda.
+      escribirCache(updatedProject.id, resuelto.document, resuelto.updated_at)
+      documentoVivo.current = { id: updatedProject.id, document: resuelto.document }
       setProjects((currentProjects) =>
         currentProjects.map((project) =>
-          project.id === updatedProject.id ? updatedProject : project,
+          project.id === updatedProject.id
+            ? {
+                ...updatedProject,
+                document: resuelto.document,
+                name: resuelto.document.project.name,
+              }
+            : project,
         ),
       )
-      setSyncStatus('synced')
+      // Si se tecleo durante el vuelo, esto queda en 'local' y no en
+      // 'synced': el indicador no puede decir "Guardado" con cosas sin subir.
+      // Ademas la fila del estado es nueva, asi que este efecto vuelve a
+      // correr y programa la espera siguiente, ya con el sello nuevo.
+      setSyncStatus(resuelto.estado)
     }, 900)
 
     return () => window.clearTimeout(timeoutId)
