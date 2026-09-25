@@ -126,6 +126,11 @@ function walk(
   })
 }
 
+/** Lo que el filtro del arbol mira de una fase. En un sitio, porque lo usan tres. */
+function casaConLaBusqueda(node: RoadmapNode, texto: string) {
+  return [node.id, node.title, node.content].join(' ').toLowerCase().includes(texto)
+}
+
 function flatten(nodes: RoadmapNode[]) {
   const result: FlatNode[] = []
   walk(nodes, (node, parentId, index, depth, path) => {
@@ -411,24 +416,34 @@ export function RoadmapEditor({
     const totalProgress = document.nodes.reduce((total, node) => total + nodeProgress(node), 0)
     return Math.round(totalProgress / document.nodes.length)
   }, [document.nodes])
+  const buscando = query.trim().length > 0
   const visibleIds = useMemo(() => {
     const text = query.trim().toLowerCase()
     if (!text) return new Set(flatNodes.map(({ node }) => node.id))
-    const matches = flatNodes.filter(({ node }) =>
-      [node.id, node.title, node.content].join(' ').toLowerCase().includes(text),
-    )
     const ids = new Set<string>()
-    matches.forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
+    flatNodes
+      .filter(({ node }) => casaConLaBusqueda(node, text))
+      .forEach(({ path }) => path.forEach((node) => ids.add(node.id)))
     return ids
   }, [flatNodes, query])
+  /**
+   * Cuantas fases casan de verdad, sin contar las que solo estan ahi por ser
+   * madres de una que casa. Es el numero que contesta "¿estan todas?", que es
+   * justo lo que el arbol no decia: el decisor lleva su "N a la vista" desde el
+   * principio y el arbol no tenia nada.
+   */
+  const coincidencias = useMemo(() => {
+    const text = query.trim().toLowerCase()
+    if (!text) return null
+    return flatNodes.filter(({ node }) => casaConLaBusqueda(node, text)).length
+  }, [flatNodes, query])
   const navigationNodes = useMemo(() => {
-    const isSearching = query.trim().length > 0
     return flatNodes.filter(({ node, path }) => {
       if (!visibleIds.has(node.id)) return false
-      if (isSearching) return true
+      if (buscando) return true
       return path.slice(0, -1).every((ancestor) => expandedIds.has(ancestor.id))
     })
-  }, [expandedIds, flatNodes, query, visibleIds])
+  }, [buscando, expandedIds, flatNodes, visibleIds])
   const canvasNodes = useMemo(() => layoutCanvasNodes(navigationNodes), [navigationNodes])
   const canvasLookup = useMemo(
     () => new Map(canvasNodes.map((item) => [item.node.id, item])),
@@ -882,7 +897,16 @@ export function RoadmapEditor({
 
   function renderNode(node: RoadmapNode, depth = 0, parentId = '', index = 0) {
     if (!visibleIds.has(node.id)) return null
-    const expanded = expandedIds.has(node.id)
+    /**
+     * Mientras se busca, una coincidencia se ve aunque su madre este plegada.
+     * Antes no: el arbol solo pintaba hijos de lo expandido y el efecto de
+     * busqueda solo abria la rama de la primera coincidencia, asi que buscar
+     * "SP4.1" ensenaba tres filas de cinco que casaban y no habia forma de
+     * saber que faltaban dos. El lienzo de Esquema ya lo hacia bien.
+     */
+    const hijosVisibles = node.children.filter((child) => visibleIds.has(child.id))
+    const abiertoPorLaBusqueda = buscando && hijosVisibles.length > 0
+    const expanded = expandedIds.has(node.id) || abiertoPorLaBusqueda
     const parentOptions = flatNodes.filter((item) => item.node.id !== node.id && !contains(node, item.node.id))
     const progress = nodeProgress(node)
 
@@ -896,7 +920,14 @@ export function RoadmapEditor({
       >
         <div className={`file-row ${selectedId === node.id ? 'selected' : ''}`} style={{ '--depth': depth } as CSSProperties}>
           <span className="tree-line" aria-hidden="true" />
-          <button className="tree-toggle" disabled={node.children.length === 0} onClick={() => toggleNodeExpansion(node)} aria-label={expanded ? 'Contraer fase' : 'Expandir fase'} title={expanded ? 'Contraer' : 'Expandir'} type="button">
+          <button
+            className="tree-toggle"
+            disabled={node.children.length === 0 || abiertoPorLaBusqueda}
+            onClick={() => toggleNodeExpansion(node)}
+            aria-label={expanded ? 'Contraer fase' : 'Expandir fase'}
+            title={abiertoPorLaBusqueda ? 'Mientras buscas se ven todas las coincidencias' : expanded ? 'Contraer' : 'Expandir'}
+            type="button"
+          >
             {node.children.length === 0 ? null : <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />}
           </button>
           <button className="file-name" onClick={() => selectNode(node)} type="button">
@@ -933,7 +964,9 @@ export function RoadmapEditor({
             <button className="text-danger" onClick={() => deleteNode(node)} type="button"><Icon name="trash" /> Eliminar</button>
           </div>
         ) : null}
-        {expanded && node.children.length > 0 ? (
+        {/* Se recorren todos los hijos, no solo los visibles, para que el indice
+            que reciben siga siendo el de verdad: "Hermana" inserta en index + 1. */}
+        {expanded && (buscando ? hijosVisibles.length > 0 : node.children.length > 0) ? (
           <ul className="file-tree-list">
             {node.children.map((child, childIndex) => renderNode(child, depth + 1, node.id, childIndex))}
           </ul>
@@ -1155,12 +1188,24 @@ export function RoadmapEditor({
       ) : (
         <section className="roadmap-body">
           <aside className="file-tree no-print">
+            {/* Cabecera del arbol: los botones y, cuando se busca, el recuento.
+                Van juntos en un solo hijo porque .file-tree son dos filas y la
+                de abajo es la que hace scroll. */}
+            <div className="tree-head">
             <div className="tree-mini-actions">
               <button onClick={() => addNode('')} title="Añadir fase raiz" type="button"><Icon name="plus" /> Raiz</button>
               <input aria-label="Buscar fases" onChange={(event) => setQuery(event.target.value)} placeholder="Buscar fases" type="search" value={query} />
               <button aria-label="Expandir todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set(flatNodes.map(({ node }) => node.id)))} title="Expandir todo" type="button"><Icon name="maximize" /></button>
               <button aria-label="Contraer todo" className="icon-only secondary-button" onClick={() => setExpandedIds(new Set())} title="Contraer todo" type="button"><Icon name="minimize" /></button>
               <button aria-label="Unir otro proyecto" className="icon-only secondary-button" disabled={availableProjects.length === 0} onClick={openProjectMerge} title="Unir otro proyecto" type="button"><Icon name="gitMerge" /></button>
+            </div>
+            {coincidencias !== null ? (
+              <p className="tree-matches" role="status">
+                {coincidencias === 0
+                  ? 'Ninguna coincidencia'
+                  : `${coincidencias} ${coincidencias === 1 ? 'coincidencia' : 'coincidencias'} de ${flatNodes.length} fases`}
+              </p>
+            ) : null}
             </div>
             <ul className="file-tree-list root">
               {document.nodes.map((node, index) => renderNode(node, 0, '', index))}
